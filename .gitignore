@@ -1,0 +1,8 @@
+# Mobile
+/node_modules/
+/.expo/
+/dist/
+
+# General
+.env
+*.log
