@@ -1,24 +1,72 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router';
+import { useEffect } from 'react';
+import { View } from 'react-native';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import 'react-native-reanimated';
+import * as SplashScreen from 'expo-splash-screen';
+import { AuthProvider, useAuth } from '@src/context/AuthContext';
+import { Colors } from '@src/constants/theme';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
+SplashScreen.preventAutoHideAsync();
 
-export const unstable_settings = {
-  anchor: '(tabs)',
-};
+function NavigationGuard() {
+  const { isLoggedIn, loading, otpId } = useAuth();
+  const router = useRouter();
+  const segments = useSegments();
 
-export default function RootLayout() {
-  const colorScheme = useColorScheme();
+  useEffect(() => {
+    if (loading) return;
+    const current = segments[0] as string;
+
+    if (otpId && current !== 'otp') {
+      router.replace('/otp');
+      return;
+    }
+    if (isLoggedIn && ['login', 'register', 'otp', 'index', undefined].includes(current)) {
+      router.replace('/dashboard');
+      return;
+    }
+    if (!isLoggedIn && !otpId && current === 'dashboard') {
+      router.replace('/');
+    }
+  }, [isLoggedIn, loading, otpId, segments]);
+
+  return null;
+}
+
+function RootLayoutInner() {
+  const { loading } = useAuth();
+
+  useEffect(() => {
+    if (!loading) SplashScreen.hideAsync();
+  }, [loading]);
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    <>
+      <StatusBar style="light" backgroundColor={Colors.background} />
+      <NavigationGuard />
+      <View style={{ flex: 1 }}>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: Colors.background },
+            animation: 'fade',
+          }}
+        >
+          <Stack.Screen name="index" />
+          <Stack.Screen name="login" />
+          <Stack.Screen name="register" />
+          <Stack.Screen name="otp" />
+          <Stack.Screen name="dashboard" />
+        </Stack>
+      </View>
+    </>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <AuthProvider>
+      <RootLayoutInner />
+    </AuthProvider>
   );
 }
