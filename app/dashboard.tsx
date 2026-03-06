@@ -1,27 +1,19 @@
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { useEffect } from 'react';
+import { useRouter } from 'expo-router';
 import { DashboardScreen } from '@src/screens/DashboardScreen';
 import { useAuth } from '@src/context/AuthContext';
-import { Colors } from '@src/constants/theme';
 
 export default function Dashboard() {
-  const { user, logout } = useAuth();
+  const { user, logout, isLoggedIn } = useAuth();
+  const router = useRouter();
 
-  if (!user) {
-    return (
-      <View style={styles.loader}>
-        <ActivityIndicator color={Colors.accent} />
-      </View>
-    );
-  }
+  const handleLogout = async () => {
+    await logout();
+    // Replace entire history so back button can't return to dashboard
+    router.replace('/login');
+  };
 
-  return <DashboardScreen user={user} onLogout={logout} />;
+  if (!isLoggedIn || !user) return null;
+
+  return <DashboardScreen user={user} onLogout={handleLogout} />;
 }
-
-const styles = StyleSheet.create({
-  loader: {
-    flex: 1,
-    backgroundColor: Colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});

@@ -13,18 +13,14 @@ interface LoginScreenProps {
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({
-  onLogin,
-  onGoToRegister,
-  onBack,
-  loading,
-  error,
+  onLogin, onGoToRegister, onBack, loading, error,
 }) => {
   const [identity, setIdentity] = useState('');
   const [password, setPassword] = useState('');
 
   const handleSubmit = () => {
     if (!identity.trim() || !password.trim()) return;
-    onLogin(identity.trim(), password);
+    onLogin(identity.trim(), password.trim());
   };
 
   return (
@@ -48,10 +44,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           )}
 
           <Input
-            label="Email or Username"
+            label="Username or Email"
             value={identity}
             onChangeText={setIdentity}
-            placeholder="Enter your email or username"
+            placeholder="Enter your username or email"
             autoCapitalize="none"
           />
 
@@ -85,57 +81,16 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 };
 
 const styles = StyleSheet.create({
-  backBtn: {
-    paddingTop: Spacing.lg,
-    paddingBottom: Spacing.md,
-    paddingHorizontal: Spacing.xs,
-  },
-  backText: {
-    color: Colors.accentLight,
-    fontSize: FontSize.md,
-  },
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    gap: Spacing.lg,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: Spacing.sm,
-  },
-  icon: {
-    fontSize: 40,
-    marginBottom: Spacing.sm,
-  },
-  title: {
-    marginBottom: Spacing.xs,
-  },
-  subtitle: {
-    textAlign: 'center',
-  },
-  errorBanner: {
-    backgroundColor: `${Colors.error}22`,
-    borderRadius: 8,
-    padding: Spacing.md,
-    marginBottom: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.error,
-  },
-  errorText: {
-    color: Colors.error,
-    fontSize: FontSize.sm,
-  },
-  gap: {
-    height: Spacing.sm,
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  link: {
-    color: Colors.accentLight,
-    fontSize: FontSize.md,
-    fontWeight: '600',
-  },
+  backBtn: { paddingTop: Spacing.lg, paddingBottom: Spacing.md, paddingHorizontal: Spacing.xs },
+  backText: { color: Colors.accentLight, fontSize: FontSize.md },
+  container: { flex: 1, justifyContent: 'center', gap: Spacing.lg },
+  header: { alignItems: 'center', marginBottom: Spacing.sm },
+  icon: { fontSize: 40, marginBottom: Spacing.sm },
+  title: { marginBottom: Spacing.xs },
+  subtitle: { textAlign: 'center' },
+  errorBanner: { backgroundColor: `${Colors.error}22`, borderRadius: 8, padding: Spacing.md, marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.error },
+  errorText: { color: Colors.error, fontSize: FontSize.sm },
+  gap: { height: Spacing.sm },
+  footer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
+  link: { color: Colors.accentLight, fontSize: FontSize.md, fontWeight: '600' },
 });

@@ -1,8 +1,7 @@
 import PocketBase from 'pocketbase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// 👇 Replace with your local IP (run `ipconfig` on Windows)
-const PB_URL = 'http://192.168.1.43:8090';
+export const PB_URL = process.env.EXPO_PUBLIC_PB_URL!;
 
 const pb = new PocketBase(PB_URL);
 
@@ -38,5 +37,10 @@ export const clearAuth = async () => {
   pb.authStore.clear();
   await AsyncStorage.removeItem('pb_auth');
 };
+
+// Reliable file URL builder - doesn't depend on record object having collectionId/collectionName.
+// Use this instead of pb.files.getURL() when passing typed model objects (which may lack those fields).
+export const getFileUrl = (collectionName: string, recordId: string, filename: string): string =>
+  `${PB_URL}/api/files/${collectionName}/${recordId}/${filename}`;
 
 export default pb;

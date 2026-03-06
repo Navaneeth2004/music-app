@@ -27,24 +27,24 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
 
   const handleSubmit = () => {
     setLocalError(null);
-    if (!username.trim() || !email.trim() || !password || !confirmPassword) return;
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (!username.trim() || !email.trim() || !password.trim() || !confirmPassword.trim()) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       setLocalError('Please enter a valid email address.');
       return;
     }
-    if (password !== confirmPassword) {
+    if (password.trim() !== confirmPassword.trim()) {
       setLocalError('Passwords do not match.');
       return;
     }
-    if (password.length < 8) {
+    if (password.trim().length < 8) {
       setLocalError('Password must be at least 8 characters.');
       return;
     }
-    onRegister(username.trim(), email.trim(), password);
+    onRegister(username.trim(), email.trim(), password.trim());
   };
 
   const displayError = localError || error;
-  const isValid = username.trim() && email.trim() && password && confirmPassword;
+  const isValid = username.trim() && email.trim() && password.trim() && confirmPassword.trim();
 
   return (
     <Screen scrollable>

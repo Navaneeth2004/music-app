@@ -5,7 +5,6 @@ import {
   ViewStyle,
   KeyboardAvoidingView,
   Platform,
-  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Spacing } from '../../constants/theme';
@@ -38,9 +37,7 @@ export const Screen: React.FC<ScreenProps> = ({
             {children}
           </ScrollView>
         ) : (
-          <View style={styles.flex}>
-            {children}
-          </View>
+          React.Children.map(children, child => child)
         )}
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -49,6 +46,10 @@ export const Screen: React.FC<ScreenProps> = ({
 
 const styles = StyleSheet.create({
   safe: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
+  background: {
     flex: 1,
     backgroundColor: Colors.background,
   },
