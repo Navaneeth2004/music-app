@@ -1,176 +1,127 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
-import { Screen } from '../components/layout/Screen';
-import { Button, Input, Card, Heading, BodyText } from '../components/ui';
-import { Colors, FontSize, Spacing } from '../constants/theme';
+import {
+  View, Text, StyleSheet, Pressable, TextInput, ActivityIndicator,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Colors, FontSize, Spacing, Radius } from '../constants/theme';
 
-interface RegisterScreenProps {
-  onRegister: (username: string, email: string, password: string) => Promise<void>;
+interface Props {
+  onRegister: (username: string, password: string) => Promise<void>;
   onGoToLogin: () => void;
-  onBack: () => void;
   loading: boolean;
   error: string | null;
 }
 
-export const RegisterScreen: React.FC<RegisterScreenProps> = ({
-  onRegister,
-  onGoToLogin,
-  onBack,
-  loading,
-  error,
-}) => {
-  const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+export const RegisterScreen: React.FC<Props> = ({ onRegister, onGoToLogin, loading, error }) => {
+  const [username, setUsername]               = useState('');
+  const [password, setPassword]               = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [localError, setLocalError] = useState<string | null>(null);
+  const [localError, setLocalError]           = useState<string | null>(null);
+
+  const displayError = localError || error;
+  const canSubmit    = username.trim() && password.trim() && confirmPassword.trim();
 
   const handleSubmit = () => {
     setLocalError(null);
-    if (!username.trim() || !email.trim() || !password.trim() || !confirmPassword.trim()) return;
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      setLocalError('Please enter a valid email address.');
-      return;
-    }
-    if (password.trim() !== confirmPassword.trim()) {
+    if (!username.trim() || !password.trim()) return;
+    if (password !== confirmPassword) {
       setLocalError('Passwords do not match.');
       return;
     }
-    if (password.trim().length < 8) {
+    if (password.length < 8) {
       setLocalError('Password must be at least 8 characters.');
       return;
     }
-    onRegister(username.trim(), email.trim(), password.trim());
+    onRegister(username.trim(), password.trim());
   };
 
-  const displayError = localError || error;
-  const isValid = username.trim() && email.trim() && password.trim() && confirmPassword.trim();
-
   return (
-    <Screen scrollable>
-      <Pressable onPress={onBack} style={styles.backBtn}>
-        <Text style={styles.backText}>← Back</Text>
-      </Pressable>
+    <SafeAreaView style={s.safe}>
+      <View style={s.center}>
+        <Text style={s.icon}>♪</Text>
+        <Text style={s.title}>Create Account</Text>
+        <Text style={s.subtitle}>Choose a username and password</Text>
 
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.icon}>♪</Text>
-          <Heading style={styles.title}>Create account</Heading>
-          <BodyText style={styles.subtitle}>Start your music theory journey</BodyText>
+        <View style={s.card}>
+          {displayError ? (
+            <View style={s.errBox}>
+              <Text style={s.errText}>{displayError}</Text>
+            </View>
+          ) : null}
+
+          <Text style={s.label}>Username</Text>
+          <TextInput
+            style={s.input}
+            value={username}
+            onChangeText={t => { setUsername(t); setLocalError(null); }}
+            placeholder="Choose a username"
+            placeholderTextColor={Colors.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="next"
+          />
+
+          <Text style={s.label}>Password</Text>
+          <TextInput
+            style={s.input}
+            value={password}
+            onChangeText={t => { setPassword(t); setLocalError(null); }}
+            placeholder="Min. 8 characters"
+            placeholderTextColor={Colors.textMuted}
+            secureTextEntry
+            returnKeyType="next"
+          />
+
+          <Text style={s.label}>Confirm Password</Text>
+          <TextInput
+            style={s.input}
+            value={confirmPassword}
+            onChangeText={t => { setConfirmPassword(t); setLocalError(null); }}
+            placeholder="Repeat your password"
+            placeholderTextColor={Colors.textMuted}
+            secureTextEntry
+            returnKeyType="done"
+            onSubmitEditing={handleSubmit}
+          />
+
+          <Pressable
+            onPress={handleSubmit}
+            disabled={!canSubmit || loading}
+            style={({ pressed }) => [s.btn, (!canSubmit || loading) && s.btnDisabled, pressed && { opacity: 0.8 }]}
+          >
+            {loading
+              ? <ActivityIndicator color="#fff" size="small" />
+              : <Text style={s.btnText}>Create Account</Text>
+            }
+          </Pressable>
         </View>
 
-        <Card>
-          {displayError && (
-            <View style={styles.errorBanner}>
-              <Text style={styles.errorText}>{displayError}</Text>
-            </View>
-          )}
-
-          <Input
-            label="Username"
-            value={username}
-            onChangeText={setUsername}
-            placeholder="Choose a username"
-            autoCapitalize="none"
-          />
-
-          <Input
-            label="Email"
-            value={email}
-            onChangeText={setEmail}
-            placeholder="your@email.com"
-            autoCapitalize="none"
-          />
-
-          <Input
-            label="Password"
-            value={password}
-            onChangeText={setPassword}
-            placeholder="Min. 8 characters"
-            secureTextEntry
-          />
-
-          <Input
-            label="Confirm Password"
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            placeholder="Repeat your password"
-            secureTextEntry
-          />
-
-          <View style={styles.gap} />
-
-          <Button
-            label="Create Account"
-            onPress={handleSubmit}
-            loading={loading}
-            disabled={!isValid}
-          />
-        </Card>
-
-        <View style={styles.footer}>
-          <BodyText>Already have an account? </BodyText>
+        <View style={s.footer}>
+          <Text style={s.footerText}>Already have an account? </Text>
           <Pressable onPress={onGoToLogin}>
-            <Text style={styles.link}>Sign in</Text>
+            <Text style={s.link}>Sign in</Text>
           </Pressable>
         </View>
       </View>
-    </Screen>
+    </SafeAreaView>
   );
 };
 
-const styles = StyleSheet.create({
-  backBtn: {
-    paddingTop: Spacing.lg,
-    paddingBottom: Spacing.md,
-    paddingHorizontal: Spacing.xs,
-  },
-  backText: {
-    color: Colors.accentLight,
-    fontSize: FontSize.md,
-  },
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    gap: Spacing.lg,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: Spacing.sm,
-  },
-  icon: {
-    fontSize: 40,
-    marginBottom: Spacing.sm,
-  },
-  title: {
-    marginBottom: Spacing.xs,
-  },
-  subtitle: {
-    textAlign: 'center',
-  },
-  errorBanner: {
-    backgroundColor: `${Colors.error}22`,
-    borderRadius: 8,
-    padding: Spacing.md,
-    marginBottom: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.error,
-  },
-  errorText: {
-    color: Colors.error,
-    fontSize: FontSize.sm,
-  },
-  gap: {
-    height: Spacing.sm,
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  link: {
-    color: Colors.accentLight,
-    fontSize: FontSize.md,
-    fontWeight: '600',
-  },
+const s = StyleSheet.create({
+  safe:        { flex: 1, backgroundColor: Colors.background },
+  center:      { flex: 1, justifyContent: 'center', paddingHorizontal: Spacing.xl, gap: Spacing.xs },
+  icon:        { fontSize: 48, textAlign: 'center', marginBottom: Spacing.xs },
+  title:       { fontSize: FontSize.xxl, fontWeight: '800', color: Colors.textPrimary, textAlign: 'center', letterSpacing: -0.5 },
+  subtitle:    { fontSize: FontSize.md, color: Colors.textSecondary, textAlign: 'center', marginBottom: Spacing.lg },
+  card:        { backgroundColor: Colors.surface, borderRadius: Radius.xl, borderWidth: 1, borderColor: Colors.border, padding: Spacing.lg, gap: Spacing.sm },
+  errBox:      { backgroundColor: Colors.error + '22', borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.error, padding: Spacing.md },
+  errText:     { color: Colors.error, fontSize: FontSize.sm },
+  label:       { fontSize: FontSize.sm, fontWeight: '600', color: Colors.textSecondary, marginBottom: 2 },
+  input:       { backgroundColor: Colors.surfaceAlt, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, color: Colors.textPrimary, fontSize: FontSize.md, padding: Spacing.md },
+  btn:         { backgroundColor: Colors.accent, borderRadius: Radius.md, paddingVertical: Spacing.md, alignItems: 'center', marginTop: Spacing.xs },
+  btnDisabled: { opacity: 0.45 },
+  btnText:     { color: '#fff', fontSize: FontSize.md, fontWeight: '700' },
+  footer:      { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: Spacing.md },
+  footerText:  { color: Colors.textSecondary, fontSize: FontSize.md },
+  link:        { color: Colors.accentLight, fontSize: FontSize.md, fontWeight: '600' },
 });

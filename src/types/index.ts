@@ -42,6 +42,8 @@ export interface ChapterFlashcard {
   back: string;
   front_image?: string;
   back_image?: string;
+  front_audio?: string;
+  back_audio?: string;
   order?: number;
   created: string;
   updated: string;
@@ -64,6 +66,8 @@ export interface SoloFlashcard {
   back: string;
   front_image?: string;
   back_image?: string;
+  front_audio?: string;
+  back_audio?: string;
   order?: number;
   created: string;
   updated: string;

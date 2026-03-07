@@ -1,14 +1,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, FontSize, Spacing, Radius } from '../../../constants/theme';
 import { Book, Chapter } from '../../../types';
-import { getChapters, createChapter, deleteChapter, getChapterFlashcards } from '../../../api/content';
+import { getChapters, createChapter, updateChapter, deleteChapter, getChapterFlashcards, createChapterFlashcard } from '../../../api/content';
 import { BlockEditorScreen }  from './BlockEditorScreen';
 import { ConfirmModal }       from '../../../components/shared/ConfirmModal';
-import { SwipeableRow }       from '../../../components/shared/Swipeablerow';
-import { SelectionBar }       from '../../../components/shared/Cardlistheader';
+import { SwipeableRow }       from '../../../components/shared/SwipeableRow';
+import { SelectionBar }       from '../../../components/shared/CardListHeader';
 import { exportJson }         from '../../../utils/exportJson';
+import { embedMedia }         from '../../../utils/mediaExport';
+import { restoreMediaMap, remapUri } from '../../../utils/mediaExport';
+import { ExportNameModal, ExportPrompt } from '../../../components/shared/Exportnamemodal';
+import { InfoModal, InfoModalData }      from '../../../components/shared/Infomodal';
+import { ImportModal }                   from '../../../components/shared/ImportModal';
+
 
 interface Props { book: Book; onBack: () => void; }
 
@@ -25,6 +31,9 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
   // selection (for export)
   const [selecting, setSelecting]       = useState(false);
   const [selected, setSelected]         = useState<Set<string>>(new Set());
+  const [exportPrompt, setExportPrompt] = useState<ExportPrompt | null>(null);
+  const [infoModal, setInfoModal]       = useState<InfoModalData | null>(null);
+  const [showImport, setShowImport]     = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -33,6 +42,43 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
     finally { setLoading(false); }
   }, [book.id]);
   useEffect(() => { load(); }, [load]);
+
+  // Called by ImportModal with already-validated + type-checked data
+  const handleImport = async (data: any) => {
+    const uriMap = await restoreMediaMap(data.media);
+
+    let chaptersToImport: any[] = [];
+    if (data.chapter) chaptersToImport = [data.chapter];
+    else if (Array.isArray(data.books) && data.books.length) { for (const b of data.books) chaptersToImport.push(...(b.chapters ?? [])); }
+    else if (Array.isArray(data.chapters)) chaptersToImport = data.chapters;
+
+    for (const ch of chaptersToImport) {
+      const chapter = await createChapter({ book: book.id, number: chapters.length + 1, title: ch.title ?? '', subtitle: ch.subtitle ?? '' });
+      if (ch.content) {
+        try {
+          let blocks = JSON.parse(ch.content);
+          if (Object.keys(uriMap).length) {
+            blocks = blocks.map((bl: any) => ({
+              ...bl,
+              imageFile: remapUri(bl.imageFile, 'images', uriMap),
+              audioFile: remapUri(bl.audioFile, 'audio',  uriMap),
+            }));
+          }
+          await updateChapter(chapter.id, { content: JSON.stringify(blocks) } as any);
+        } catch {}
+      }
+      for (const card of (ch.flashcards ?? [])) {
+        await createChapterFlashcard({
+          chapter: chapter.id, front: card.front ?? '', back: card.back ?? '', order: 0,
+          front_image: remapUri(card.front_image, 'images', uriMap),
+          back_image:  remapUri(card.back_image,  'images', uriMap),
+          front_audio: remapUri(card.front_audio, 'audio',  uriMap),
+          back_audio:  remapUri(card.back_audio,  'audio',  uriMap),
+        });
+      }
+    }
+    await load();
+  };
 
   const cancelSelect = () => { setSelecting(false); setSelected(new Set()); };
   const toggleSelect = (id: string) => setSelected(prev => {
@@ -55,21 +101,45 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
     if (!chosen.length) return;
     try {
       for (const ch of chosen) {
+        const media: Record<string, string> = {};
         const cards = await getChapterFlashcards(ch.id);
+
+        let blocks: any[] = [];
+        try { blocks = (ch as any).content ? JSON.parse((ch as any).content) : []; } catch {}
+        const exportBlocks = await Promise.all(blocks.map(async (bl: any) => ({
+          ...bl,
+          imageFile: await embedMedia(bl.imageFile, 'images', media),
+          audioFile: await embedMedia(bl.audioFile, 'audio',  media),
+        })));
+
+        const exportCards = await Promise.all(cards.map(async c => ({
+          front: c.front, back: c.back,
+          front_image: await embedMedia(c.front_image, 'images', media),
+          back_image:  await embedMedia(c.back_image,  'images', media),
+          front_audio: await embedMedia(c.front_audio, 'audio',  media),
+          back_audio:  await embedMedia(c.back_audio,  'audio',  media),
+        })));
+
         const payload = {
-          version: 1, exportedAt: new Date().toISOString(), type: 'chapter',
+          version: 2, exportedAt: new Date().toISOString(), type: 'chapter',
           book: { title: book.title, icon: book.icon, color: book.color },
           chapter: {
             number: ch.number, title: ch.title, subtitle: ch.subtitle,
-            content: (ch as any).content ?? null,
-            flashcards: cards.map(c => ({ front: c.front, back: c.back })),
+            content: exportBlocks.length ? JSON.stringify(exportBlocks) : null,
+            flashcards: exportCards,
           },
+          media,
         };
         const slug = ch.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
-        await exportJson(payload, `chapter-${ch.number}-${slug}.json`);
+        await new Promise<void>((resolve) => {
+          setExportPrompt({
+            suggested: `chapter-${ch.number}-${slug}`,
+            onConfirm: async (filename) => { await exportJson(payload, filename); resolve(); },
+          });
+        });
       }
       cancelSelect();
-    } catch { Alert.alert('Export failed', 'Could not export chapters.'); }
+    } catch { setInfoModal({ title: 'Export failed', message: 'Could not export chapters.' }); }
   };
 
   if (editing) return <BlockEditorScreen chapter={editing} book={book} onBack={() => { setEditing(null); load(); }} />;
@@ -140,9 +210,14 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
               ))}
 
               {!showForm
-                ? <Pressable onPress={() => setShowForm(true)} style={s.addBtn}>
-                    <Text style={s.addBtnText}>+ Add Chapter</Text>
-                  </Pressable>
+                ? <View style={s.addRow}>
+                    <Pressable onPress={() => setShowForm(true)} style={s.addBtn}>
+                      <Text style={s.addBtnText}>+ Add Chapter</Text>
+                    </Pressable>
+                    <Pressable onPress={() => setShowImport(true)} style={s.importBtn}>
+                      <Text style={s.importBtnText}>⬇ Import</Text>
+                    </Pressable>
+                  </View>
                 : <View style={s.form}>
                     <Text style={s.formTitle}>Chapter {chapters.length + 1}</Text>
                     <Text style={s.label}>TITLE</Text>
@@ -173,8 +248,11 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
           if (deleteTarget) { await deleteChapter(deleteTarget.id).catch(() => {}); await load(); }
           setDeleteTarget(null);
         }}
-        onCancel={() => setDeleteTarget(null)}
+        onCancel={async () => { setDeleteTarget(null); await load(); }}
       />
+      <ExportNameModal prompt={exportPrompt} onClose={() => setExportPrompt(null)} />
+      <InfoModal info={infoModal} onClose={() => setInfoModal(null)} />
+      <ImportModal visible={showImport} mode="chapter" onImport={handleImport} onCancel={() => setShowImport(false)} />
     </SafeAreaView>
   );
 };
@@ -206,8 +284,11 @@ const s = StyleSheet.create({
   chSub:    { fontSize: FontSize.xs, color: Colors.textMuted, marginTop: 2 },
   chevron:  { color: Colors.textMuted, fontSize: 20 },
 
-  addBtn:     { borderWidth: 1.5, borderColor: Colors.accent + '66', borderStyle: 'dashed', borderRadius: Radius.md, paddingVertical: Spacing.md, alignItems: 'center', marginTop: Spacing.sm },
+  addRow:     { marginTop: Spacing.sm, gap: Spacing.xs },
+  addBtn:     { borderWidth: 1.5, borderColor: Colors.accent + '66', borderStyle: 'dashed', borderRadius: Radius.md, paddingVertical: Spacing.md, alignItems: 'center' },
   addBtnText: { color: Colors.accent, fontSize: FontSize.md, fontWeight: '600' },
+  importBtn:  { borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.md, paddingVertical: Spacing.sm, alignItems: 'center' },
+  importBtnText: { color: Colors.textSecondary, fontSize: FontSize.sm, fontWeight: '600' },
   form:       { backgroundColor: Colors.surface, borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.border, padding: Spacing.lg, gap: Spacing.sm, marginTop: Spacing.md },
   formTitle:  { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary },
   label:      { fontSize: FontSize.xs, color: Colors.textMuted, letterSpacing: 1.5, fontWeight: '600' },

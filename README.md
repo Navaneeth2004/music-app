@@ -1,6 +1,24 @@
 # Music Theory Study App
 
-A React Native mobile app for studying music theory. Admin users build content (textbooks, chapters, flashcards); regular users study that content through a clean reading interface and flashcard practice.
+A React Native mobile app for studying music theory. Admins build structured content — textbooks, chapters with a rich block editor, and flashcard decks. Students read, study, and practice through a clean interface.
+
+---
+
+## Features
+
+### Admin (content builder)
+- **Textbook editor** — create books with chapters, reorder, import/export
+- **Block editor** — rich chapter content with headings, paragraphs, bullet lists, tables, images, and audio blocks; drag-to-reorder; draft system
+- **Flashcard builder** — chapter-attached flashcards and standalone solo decks with front/back text, images, and audio
+- **Import/Export** — per-book, per-chapter, per-deck JSON export; full backup with embedded media
+
+### Student (study practice)
+- **Books & Chapters** — browse textbooks, read chapter content with full block rendering
+- **Flashcard study** — browse mode (tap to flip) and exam mode (rate cards: Got it / Unsure / Missed) with retry of missed cards
+- **Solo Decks** — standalone flashcard sets
+- **⭐ Favourites** — pin books and decks to the top of lists
+- **🔍 Search** — instant full-text search across books, chapters, and all flashcards
+- **Backup & Restore** — full export including images and audio, importable on any device
 
 ---
 
@@ -8,219 +26,194 @@ A React Native mobile app for studying music theory. Admin users build content (
 
 | Layer | Technology |
 |---|---|
-| Framework | React Native + Expo (SDK 52+) |
+| Framework | React Native + Expo SDK 52 |
 | Routing | Expo Router (file-based, `app/` directory) |
-| Backend | PocketBase (self-hosted, exposed via ngrok) |
+| Database | SQLite via `expo-sqlite` |
+| Auth | Local SHA-256 password hashing via `expo-crypto` |
+| Session | `AsyncStorage` (token-based session persistence) |
+| File storage | Local device filesystem via `expo-file-system` |
+| Media picking | `expo-image-picker`, `expo-document-picker` |
+| Sharing | `expo-sharing` |
 | Language | TypeScript |
-| Auth | PocketBase email/password + OTP email verification |
-| Storage | PocketBase collections (books, chapters, flashcards) |
-| File uploads | PocketBase file fields (images in chapters + flashcards) |
+| Gestures | `react-native-gesture-handler`, `react-native-draggable-flatlist` |
 
 ---
 
-## Setup
+## Architecture
 
-### Prerequisites
-- Node.js 18+
-- Expo CLI (`npm install -g expo-cli`)
-- PocketBase running locally
-- ngrok (to expose PocketBase to the phone)
+### Auth
+Fully local — no server required. Passwords are SHA-256 hashed via `expo-crypto` and stored in SQLite. Sessions persist in `AsyncStorage`. The admin user is identified by a hardcoded username constant (`src/constants/admin.ts`).
 
-### Install
-```bash
-npm install
-```
+### Database
+All content lives in a local SQLite database (`studyapp.db`) in the app's private sandbox. Every content table includes a `user_id` column so multiple accounts on the same device are fully isolated.
 
-### Environment
-Create a `.env` file in the project root:
-```env
-EXPO_PUBLIC_PB_URL=https://your-ngrok-url.ngrok-free.app
-```
+**Tables:** `users`, `books`, `chapters`, `chapter_flashcards`, `solo_decks`, `solo_flashcards`
 
-> If running locally without ngrok, edit `src/api/pb.ts` directly and set `PB_URL` to your machine's local IP, e.g. `http://192.168.1.43:8090`.
+### Media
+Images and audio are stored as **local file URIs** in the database. Files stay wherever the user picked them from (camera roll, files app). The DB stores the path; the app reads the file at runtime. No server, no uploads.
 
-### Run PocketBase
-```bash
-./pocketbase serve --http="0.0.0.0:8090"
-```
-The `0.0.0.0` flag is required so devices on the network (or ngrok) can reach it — without it PocketBase only accepts localhost connections.
+### Backup format (v2)
+A single `.json` file containing:
+- All text content (books, chapters, flashcards, decks)
+- `media` map: `{ "images/filename.jpg": "<base64>", "audio/clip.m4a": "<base64>" }`
+- `favourites`: pinned book and deck IDs
 
-### ngrok
-```bash
-ngrok http 8090
-```
-Copy the HTTPS URL into your `.env` file.
-
-### Start the app
-```bash
-npx expo start --clear
-```
-
----
-
-## PocketBase Collections
-
-### `users`
-Standard PocketBase auth collection.
-- `username` (text)
-- `email` (email)
-- OTP enabled for email verification on register
-
-### `books`
-- `title` (text)
-- `author` (text)
-- `icon` (text — emoji)
-- `color` (text — hex color)
-- `order` (number)
-
-### `chapters`
-- `book` (relation → books)
-- `number` (number)
-- `title` (text)
-- `subtitle` (text)
-- `content` (json — serialised `ContentBlock[]`)
-- `images` (file, multiple — stores uploaded block images)
-
-### `flashcards`
-- `chapter` (relation → chapters)
-- `front` (text)
-- `back` (text)
-- `front_image` (file — optional)
-- `back_image` (file — optional)
-- `order` (number)
+On import, base64-encoded media is decoded and written to `documentDirectory/media/`. v1 backups (text only) are also importable.
 
 ---
 
 ## Project Structure
 
 ```
-app/                        # Expo Router routes
-  _layout.tsx               # Root layout — AuthProvider + NavigationGuard
-  index.tsx                 # Splash/redirect screen (no logic, just spinner)
-  login.tsx                 # Wires LoginScreen to AuthContext
-  register.tsx              # Wires RegisterScreen to AuthContext
-  otp.tsx                   # OTP verification screen
-  dashboard.tsx             # Main app shell
+app/
+  _layout.tsx          ← AuthProvider + NavigationGuard + Expo Router Stack
+  index.tsx            ← spinner only (no auth calls — see gotcha below)
+  dashboard.tsx        ← mounts DashboardScreen
 
 src/
   api/
-    pb.ts                   # PocketBase client, auth persistence, getFileUrl()
-    auth.ts                 # login, register, OTP, logout helpers
-    content.ts              # CRUD for books, chapters, flashcards
-
-  context/
-    AuthContext.tsx          # AuthProvider + useAuth hook
-
-  hooks/
-    useAuth.ts              # Re-export from AuthContext (backwards compat)
-
-  types/
-    index.ts                # User, Book, Chapter, Flashcard interfaces
-    blocks.ts               # ContentBlock, BlockType, TableRow interfaces
+    db.ts              ← SQLite layer, all CRUD + dbSearchAll
+    auth.ts            ← local login/register/logout/loadSession
+    content.ts         ← thin wrappers over db.ts
 
   constants/
-    theme.ts                # Colors, FontSize, Spacing, Radius
-    admin.ts                # ADMIN_USERNAME constant
+    theme.ts           ← Colors, FontSize, Spacing, Radius
+    admin.ts           ← ADMIN_USERNAME
 
-  components/
-    layout/Screen.tsx        # SafeAreaView wrapper with scroll/keyboard support
-    ui/                     # Button, Input, Card, Heading, BodyText
-    shared/
-      ConfirmModal.tsx       # Reusable delete confirmation modal
-      ImagePickerModal.tsx   # Camera / photo library picker modal
+  context/
+    AuthContext.tsx    ← AuthProvider, useAuth hook, isAdmin flag
+
+  types/
+    index.ts           ← User, Book, Chapter, ChapterFlashcard, SoloDeck, SoloFlashcard
+    blocks.ts          ← ContentBlock, BlockType, TableRow
 
   utils/
-    pickImage.ts            # pickImageNative(), pickImageFromWeb(), appendImageToFormData()
+    favorites.ts       ← AsyncStorage-based pin/unpin for books and decks
+    shuffle.ts         ← Fisher-Yates shuffle (used by exam mode)
+    pickImage.ts       ← expo-image-picker wrapper
+    pickAudio.ts       ← expo-document-picker audio wrapper
+    exportJson.ts      ← share a JSON payload as a file
+
+  components/
+    shared/
+      ConfirmModal.tsx
+      SwipeableRow.tsx
+      CardListHeader.tsx
+      CardListItem.tsx
+      ImagePickerModal.tsx
+      ImageLightbox.tsx
+      AudioPlayer.tsx
 
   screens/
-    LoginScreen.tsx
-    RegisterScreen.tsx
-    OTPScreen.tsx
-    DashboardScreen.tsx      # Tab nav shell (admin vs student tabs)
+    DashboardScreen.tsx          ← tab shell (admin: Builder+Settings, student: Study+Search+Settings)
     SettingsScreen.tsx
+    BackupScreen.tsx             ← full export/import with media
+
+    search/
+      SearchScreen.tsx           ← global search, debounced, grouped by type
 
     admin/
-      StudyBuilderScreen.tsx         # Admin home: Books / Flashcards menu
+      StudyBuilderScreen.tsx
       builder/
-        BookBuilderScreen.tsx        # Create/delete textbooks
-        ChapterBuilderScreen.tsx     # Create/delete chapters, enter block editor
-        BlockEditorScreen.tsx        # Full drag-and-drop block editor for chapter content
+        BookBuilderScreen.tsx
+        ChapterBuilderScreen.tsx
+        BlockEditorScreen.tsx    ← richest screen; draft system, swipe-to-delete, drag reorder
       flashcards/
         FlashcardBookPickerScreen.tsx
         FlashcardBuilderScreen.tsx
-        FlashcardFormScreen.tsx      # Create/edit flashcard with optional images
+        FlashcardFormScreen.tsx
+        SoloDeckBuilderScreen.tsx
+        SoloFlashcardFormScreen.tsx
 
     bookpractice/
-      BookPracticeScreen.tsx         # Student view: books → chapters → content + flashcards
+      BookPracticeScreen.tsx     ← navigation state machine
+      BookChapterScreens.tsx     ← BookListScreen, ChapterListScreen, ChapterViewScreen
+      FlashcardScreens.tsx       ← FlashcardsScreen, SingleCardScreen, ExamScreen
+      SoloScreens.tsx
+      practiceShared.tsx         ← SoloDecksScreen, SoloDeckStudyScreen, SoloExamScreen + shared styles
 ```
 
 ---
 
-## Authentication Flow
+## Setup
 
-1. App starts → `index.tsx` shows spinner
-2. `NavigationGuard` in `_layout.tsx` checks `AuthContext`
-3. Not logged in → `/login`
-4. Login → PocketBase `authWithPassword`
-5. On register → OTP email sent → `/otp` screen → `authWithOTP`
-6. Auth token persisted in `AsyncStorage` via `pb.authStore.onChange`
-7. On next launch, `loadAuth()` restores session from AsyncStorage
-8. Logged in on auth route → `/dashboard`
+### Install dependencies
+```bash
+npx expo install
+```
 
----
+### Required packages (if starting fresh)
+```bash
+npx expo install expo-sqlite expo-crypto expo-file-system expo-sharing \
+  expo-document-picker expo-image-picker expo-av \
+  @react-native-async-storage/async-storage \
+  react-native-gesture-handler react-native-draggable-flatlist \
+  react-native-safe-area-context react-native-reanimated
+```
 
-## Admin vs Student
-
-Determined by `ADMIN_USERNAME` constant in `src/constants/admin.ts` (currently `'navaneeth'`). If `user.username.toLowerCase() === ADMIN_USERNAME.toLowerCase()`, the user sees the builder tabs; otherwise they see the study tabs.
-
----
-
-## Block Editor
-
-Chapter content is stored as a JSON array of `ContentBlock` objects in the `chapters.content` field.
-
-**Block types:** `heading`, `subheading`, `paragraph`, `bullets`, `table`, `divider`, `image`
-
-**Key behaviours:**
-- Drag-and-drop reordering via `react-native-draggable-flatlist`
-- Each block collapses to save screen space
-- Text editing happens in a modal (to avoid keyboard issues in draggable lists)
-- Image blocks: picked image is stored locally (as `PickedImage`) until Save is pressed, then uploaded to `chapters.images` file field, filename stored in `block.imageFile`
-- Save uploads all pending images first, then writes the updated content JSON
-
-### Image Storage Pattern
-Images in chapter blocks are stored differently from flashcard images:
-
-- **Flashcards**: image stored as a dedicated PocketBase file field (`front_image`, `back_image`). URL computed live via `pb.files.getURL(record, filename)`.
-- **Chapter blocks**: image filename stored inside the content JSON as `block.imageFile`. URL computed live via `getFileUrl('chapters', chapter.id, block.imageFile)` from `src/api/pb.ts`.
-
-`getFileUrl` builds: `PB_URL + /api/files/chapters/RECORD_ID/FILENAME`
-
-This avoids relying on PocketBase's internal `collectionId` field being present on typed model objects.
-
-**Important bug history:** `record.images` from PocketBase returns a plain string (not an array) when there is only one file. The save function normalises this: `Array.isArray(raw) ? raw : [raw]`.
-
----
-
-## Known Gotchas
-
-- **`requestKey: null`** on all PocketBase queries — prevents auto-cancellation when a component remounts quickly (e.g. navigating back and forth causes the previous request to be cancelled, leaving the screen in a loading state forever).
-- **`SafeAreaView`** must be imported from `react-native-safe-area-context`, not `react-native`.
-- **`MediaType`** for expo-image-picker: use `['images'] as any` — the `MediaType` enum is undefined in the installed version.
-- **Expo Router + AuthProvider**: route files (`index.tsx`, `login.tsx`, etc.) render as navigator screens — they mount before `RootLayout`'s JSX finishes, so `useAuth()` cannot be called directly inside them unless they are wrapped. Solution: `index.tsx` has no auth logic; `NavigationGuard` (inside `AuthProvider`) handles all redirects.
-- **ngrok free tier** shows a browser interstitial on first visit. Open the ngrok URL in the phone's browser once to dismiss it before using the app.
-
----
-
-## Dependencies (key packages)
-
+### tsconfig.json — path alias
 ```json
-"expo": "~52.x",
-"expo-router": "~4.x",
-"pocketbase": "^0.21.x",
-"react-native-draggable-flatlist": "^4.x",
-"react-native-gesture-handler": "^2.x",
-"react-native-safe-area-context": "^4.x",
-"expo-image-picker": "^15.x",
-"@react-native-async-storage/async-storage": "^1.x"
+{
+  "compilerOptions": {
+    "paths": { "@src/*": ["./src/*"] }
+  }
+}
 ```
+
+### babel.config.js — Metro alias resolution
+```js
+module.exports = function(api) {
+  api.cache(true);
+  return {
+    presets: ['babel-preset-expo'],
+    plugins: [
+      ['module-resolver', {
+        root: ['./'],
+        alias: { '@src': './src' },
+      }],
+      'react-native-reanimated/plugin',
+    ],
+  };
+};
+```
+
+### Run
+```bash
+npx expo start
+```
+
+---
+
+## Key Implementation Notes
+
+### Expo Router gotcha
+Route files render before `AuthProvider` is ready — never call `useAuth()` in a route file. All auth logic and redirects live in `NavigationGuard` inside `_layout.tsx`.
+
+### Block editor draft system
+Explicit Draft button (not auto-save). `isDirty` tracks whether any change has been made since the last draft or save. Draft button is amber/active only when dirty. Saving clears the draft from AsyncStorage.
+
+### Swipe-to-delete on blocks
+Uses `Swipeable` from `react-native-gesture-handler` (not `PanResponder`) because the block list is inside `DraggableFlatList`. Invisible 1px right action gives a nudge feel without revealing a delete zone. Delete button removed from card headers.
+
+### User isolation
+Every content table has `user_id TEXT NOT NULL DEFAULT ''`. A module-level `_userId` variable in `db.ts` is set on login and cleared on logout. All queries filter by it.
+
+### Search
+`dbSearchAll(query)` runs LIKE queries against all five content tables with JOINs to carry navigation context. Results are debounced 300ms in the UI and grouped by type.
+
+### Favourites
+Stored in AsyncStorage as JSON arrays of IDs, keyed by type. Pinned items sort to the top in list screens. Included in backups but cannot be auto-restored by ID after import (IDs change on fresh insert).
+
+---
+
+## User Roles
+
+| Feature | Admin | Student |
+|---|---|---|
+| Build textbooks and chapters | ✅ | ❌ |
+| Build flashcard decks | ✅ | ❌ |
+| Read chapters | ✅ | ✅ |
+| Study flashcards | ✅ | ✅ |
+| Search | ❌ | ✅ |
+| Favourites | ❌ | ✅ |
+| Backup & Restore | ✅ | ✅ |

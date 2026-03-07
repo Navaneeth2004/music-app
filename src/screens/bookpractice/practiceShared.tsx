@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Pressable, ScrollView, ActivityIndicator, Image, StyleSheet } from 'react-native';
+import { View, Text, Pressable, ScrollView, ActivityIndicator, Image, StyleSheet, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, FontSize, Spacing, Radius } from '../../constants/theme';
 import { SoloDeck, SoloFlashcard } from '../../types';
 import { getSoloDecks, getSoloFlashcards } from '../../api/content';
-import pb from '../../api/pb';
 import { ImageLightbox } from '../../components/shared/ImageLightbox';
 import { AudioPlayer } from '../../components/shared/AudioPlayer';
-import { CardListItem } from '../../components/shared/Cardlistitem';
-import { CardListHeader, SelectionBar } from '../../components/shared/Cardlistheader';
+import { CardListItem } from '../../components/shared/CardListItem';
+import { CardListHeader, SelectionBar } from '../../components/shared/CardListHeader';
 import { exportJson } from '../../utils/exportJson';
+import { getFavorites, toggleFavorite } from '../../utils/favorites';
+import { getHidden, toggleHidden } from '../../utils/hidden';
+import { useAuth } from '../../context/AuthContext';
 
 // ─── Constants ─────────────────────────────────────────────────
 // FRONT side always uses the book/deck's accent color.
@@ -18,9 +20,10 @@ import { exportJson } from '../../utils/exportJson';
 export const BACK_COLOR = '#38BFA1';
 
 // ─── Helpers ───────────────────────────────────────────────────
+// With SQLite, file fields store full local URIs directly — no PocketBase URL needed
 export const imgUrl = (card: any, field: 'front_image' | 'back_image' | 'image'): string | null => {
   const f = card?.[field]; if (!f) return null;
-  return pb.files.getURL(card, f);
+  return String(f);
 };
 
 // ─── Shared atoms ──────────────────────────────────────────────
@@ -80,10 +83,72 @@ export const ZoomableImage: React.FC<{ uri: string; style?: any }> = ({ uri, sty
 };
 
 // ─── Solo Decks List ───────────────────────────────────────────
+// ─── Solo deck context menu ────────────────────────────────────
+const DeckContextMenu: React.FC<{
+  visible: boolean; title: string; isHidden: boolean; isPinned: boolean;
+  onHide: () => void; onPin: () => void; onClose: () => void;
+}> = ({ visible, title, isHidden, isPinned, onHide, onPin, onClose }) => (
+  <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Pressable style={dcm.overlay} onPress={onClose}>
+      <View style={dcm.box}>
+        <Text style={dcm.label} numberOfLines={1}>{title}</Text>
+        <Pressable onPress={() => { onPin(); onClose(); }} style={dcm.row}>
+          <Text style={dcm.rowIcon}>{isPinned ? '★' : '☆'}</Text>
+          <Text style={dcm.rowText}>{isPinned ? 'Unpin' : 'Pin to top'}</Text>
+        </Pressable>
+        <Pressable onPress={() => { onHide(); onClose(); }} style={dcm.row}>
+          <Text style={dcm.rowIcon}>{isHidden ? '👁️' : '🙈'}</Text>
+          <Text style={dcm.rowText}>{isHidden ? 'Show for students' : 'Hide from students'}</Text>
+        </Pressable>
+        <Pressable onPress={onClose} style={[dcm.row, dcm.cancelRow]}>
+          <Text style={dcm.cancelText}>Cancel</Text>
+        </Pressable>
+      </View>
+    </Pressable>
+  </Modal>
+);
+const dcm = {
+  overlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' as const, padding: Spacing.lg },
+  box:        { backgroundColor: '#1E1E2E', borderRadius: Radius.xl, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', overflow: 'hidden' as const },
+  label:      { fontSize: FontSize.xs, fontWeight: '700' as const, color: Colors.textMuted, textAlign: 'center' as const, paddingVertical: Spacing.sm, paddingHorizontal: Spacing.lg, letterSpacing: 0.5, textTransform: 'uppercase' as const, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' },
+  row:        { flexDirection: 'row' as const, alignItems: 'center' as const, paddingVertical: 14, paddingHorizontal: Spacing.lg, gap: Spacing.md, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
+  rowIcon:    { fontSize: 18, width: 26 },
+  rowText:    { fontSize: FontSize.md, color: Colors.textPrimary, fontWeight: '500' as const },
+  cancelRow:  { borderBottomWidth: 0 },
+  cancelText: { flex: 1, textAlign: 'center' as const, fontSize: FontSize.md, color: Colors.textSecondary, fontWeight: '600' as const },
+};
+
 export const SoloDecksScreen: React.FC<{ onDeck: (d: SoloDeck) => void; onBack: () => void }> = ({ onDeck, onBack }) => {
-  const [decks, setDecks] = useState<SoloDeck[]>([]);
+  const { isAdmin } = useAuth();
+  const [decks, setDecks]   = useState<SoloDeck[]>([]);
   const [loading, setLoading] = useState(true);
-  useEffect(() => { getSoloDecks().then(setDecks).finally(() => setLoading(false)); }, []);
+  const [pinned, setPinned] = useState<Set<string>>(new Set());
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [menu, setMenu]     = useState<SoloDeck | null>(null);
+
+  useEffect(() => {
+    Promise.all([getSoloDecks(), getFavorites('deck'), getHidden('deck')])
+      .then(([d, p, h]) => { setDecks(d); setPinned(p); setHidden(h); })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handlePin = async (id: string) => {
+    await toggleFavorite('deck', id);
+    setPinned(await getFavorites('deck'));
+  };
+
+  const handleToggleHide = async (id: string) => {
+    await toggleHidden('deck', id);
+    setHidden(await getHidden('deck'));
+  };
+
+  const visible = isAdmin ? decks : decks.filter(d => !hidden.has(d.id));
+
+  const sorted = [...visible].sort((a, b) => {
+    const ap = pinned.has(a.id) ? 0 : 1;
+    const bp = pinned.has(b.id) ? 0 : 1;
+    return ap - bp;
+  });
 
   return (
     <SafeAreaView style={s.safe}>
@@ -93,22 +158,54 @@ export const SoloDecksScreen: React.FC<{ onDeck: (d: SoloDeck) => void; onBack: 
         <Text style={s.pageSubtitle}>Standalone flashcard sets</Text>
         {loading
           ? <ActivityIndicator color={Colors.accent} style={{ marginTop: Spacing.xl }} />
-          : decks.length === 0
+          : visible.length === 0
             ? <Empty icon="💡" title="No solo decks yet" subtitle="Decks will appear here once added" />
-            : decks.map(deck => (
-                <Pressable key={deck.id} onPress={() => onDeck(deck)}
-                  style={({ pressed }) => [s.bookCard, pressed && s.pressed]}>
-                  <View style={[s.bookCover, { backgroundColor: deck.color + '33' }]}>
-                    <Text style={{ fontSize: 22 }}>{deck.icon}</Text>
-                  </View>
-                  <View style={s.bookMeta}>
-                    <Text style={s.bookTitle}>{deck.title}</Text>
-                  </View>
-                  <Text style={s.chevron}>›</Text>
-                </Pressable>
-              ))
+            : <>
+                {pinned.size > 0 && <Text style={s.sectionLabel}>PINNED</Text>}
+                {sorted.map((deck, idx) => {
+                  const isPinned = pinned.has(deck.id);
+                  const isHid    = hidden.has(deck.id);
+                  const isFirstUnpinned = idx > 0 && !isPinned && pinned.has(sorted[idx - 1].id);
+                  return (
+                    <React.Fragment key={deck.id}>
+                      {isFirstUnpinned && <Text style={[s.sectionLabel, { marginTop: Spacing.md }]}>ALL DECKS</Text>}
+                      <Pressable
+                        onPress={() => onDeck(deck)}
+                        onLongPress={() => isAdmin && setMenu(deck)}
+                        delayLongPress={400}
+                        style={({ pressed }) => [s.bookCard, pressed && s.pressed, isHid && { opacity: 0.45 }]}
+                      >
+                        <View style={[s.bookCover, { backgroundColor: deck.color + '33' }]}>
+                          <Text style={{ fontSize: 22 }}>{deck.icon}</Text>
+                        </View>
+                        <View style={s.bookMeta}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={s.bookTitle}>{deck.title}</Text>
+                            {isAdmin && isHid && <Text style={{ fontSize: 12 }}>🙈</Text>}
+                          </View>
+                        </View>
+                        <Pressable onPress={() => handlePin(deck.id)} hitSlop={12} style={{ padding: 6 }}>
+                          <Text style={{ fontSize: 20, opacity: isPinned ? 1 : 0.3 }}>⭐</Text>
+                        </Pressable>
+                        <Text style={s.chevron}>›</Text>
+                      </Pressable>
+                    </React.Fragment>
+                  );
+                })}
+              </>
         }
       </ScrollView>
+      {menu && (
+        <DeckContextMenu
+          visible
+          title={menu.title}
+          isHidden={hidden.has(menu.id)}
+          isPinned={pinned.has(menu.id)}
+          onHide={() => handleToggleHide(menu.id)}
+          onPin={() => handlePin(menu.id)}
+          onClose={() => setMenu(null)}
+        />
+      )}
     </SafeAreaView>
   );
 };
@@ -204,6 +301,7 @@ export const SoloDeckStudyScreen: React.FC<{
         </Pressable>
     : undefined;
 
+
   return (
     <SafeAreaView style={s.safe}>
       <CardListHeader
@@ -224,11 +322,6 @@ export const SoloDeckStudyScreen: React.FC<{
       )}
 
       <ScrollView contentContainerStyle={s.listContent} showsVerticalScrollIndicator={false}>
-        {!loading && !selecting && cards.length > 0 && (
-          <View style={{ paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm }}>
-            <Text style={{ fontSize: 10, color: Colors.textMuted, fontStyle: 'italic' }}>long-press a card to select for export</Text>
-          </View>
-        )}
         {loading
           ? <ActivityIndicator style={{ marginTop: Spacing.xl }} color={deck.color} />
           : cards.length === 0

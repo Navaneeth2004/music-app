@@ -1,69 +1,61 @@
-import pb from './pb';
+/**
+ * src/api/content.ts
+ * ─────────────────────────────────────────────────────────────
+ * Content API — identical function signatures to the old PocketBase
+ * version.  All callers (screens, BackupScreen, export utils) are
+ * completely unchanged.
+ *
+ * Implementation delegates to the local SQLite layer in db.ts.
+ * Auth (login / register / OTP) still goes through PocketBase (pb.ts).
+ *
+ * File fields (front_image, back_image, front_audio, back_audio) now
+ * store full local URIs returned by expo-image-picker / expo-av.
+ * The getFileUrl() helper from pb.ts is no longer needed for content
+ * records; it's kept in pb.ts for any legacy references.
+ */
+
 import { Book, Chapter, ChapterFlashcard, SoloDeck, SoloFlashcard } from '../types';
-import { ContentBlock } from '../types/blocks';
+import {
+  dbGetBooks,      dbCreateBook,      dbUpdateBook,      dbDeleteBook,
+  dbGetChapters,   dbGetChapter,      dbCreateChapter,   dbUpdateChapter,   dbDeleteChapter,
+  dbGetChapterFlashcards, dbCreateChapterFlashcard, dbUpdateChapterFlashcard, dbDeleteChapterFlashcard,
+  dbGetSoloDecks,  dbCreateSoloDeck,  dbUpdateSoloDeck,  dbDeleteSoloDeck,
+  dbGetSoloFlashcards, dbCreateSoloFlashcard, dbUpdateSoloFlashcard, dbDeleteSoloFlashcard,
+} from './db';
 
-export const getBooks = async (): Promise<Book[]> => {
-  const r = await pb.collection('books').getFullList({ sort: 'order,title', requestKey: null });
-  return r as unknown as Book[];
-};
-export const createBook = async (d: Partial<Book>): Promise<Book> =>
-  pb.collection('books').create(d) as unknown as Promise<Book>;
-export const updateBook = async (id: string, d: Partial<Book>): Promise<Book> =>
-  pb.collection('books').update(id, d) as unknown as Promise<Book>;
-export const deleteBook = async (id: string) => pb.collection('books').delete(id);
+// ─── Books ────────────────────────────────────────────────────
+export const getBooks = (): Promise<Book[]>                        => dbGetBooks();
+export const createBook = (d: Partial<Book>): Promise<Book>        => dbCreateBook(d);
+export const updateBook = (id: string, d: Partial<Book>): Promise<Book> => dbUpdateBook(id, d);
+export const deleteBook = (id: string): Promise<void>              => dbDeleteBook(id);
 
-export const getChapters = async (bookId: string): Promise<Chapter[]> => {
-  const r = await pb.collection('chapters').getFullList({
-    filter: `book = "${bookId}"`, sort: 'number',
-    requestKey: null,
-  });
-  return r as unknown as Chapter[];
-};
-export const createChapter = async (d: Partial<Chapter>): Promise<Chapter> =>
-  pb.collection('chapters').create(d) as unknown as Promise<Chapter>;
-export const updateChapter = async (id: string, d: Partial<Chapter>): Promise<Chapter> =>
-  pb.collection('chapters').update(id, d) as unknown as Promise<Chapter>;
-export const deleteChapter = async (id: string) => pb.collection('chapters').delete(id);
+// ─── Chapters ─────────────────────────────────────────────────
+export const getChapters = (bookId: string): Promise<Chapter[]>    => dbGetChapters(bookId);
+export const getChapter  = (id: string): Promise<Chapter>          => dbGetChapter(id);
+export const createChapter = (d: Partial<Chapter>): Promise<Chapter> => dbCreateChapter(d);
+export const updateChapter = (id: string, d: Partial<Chapter>): Promise<Chapter> => dbUpdateChapter(id, d);
+export const deleteChapter = (id: string): Promise<void>           => dbDeleteChapter(id);
 
-export const getChapterFlashcards = async (chapterId: string): Promise<ChapterFlashcard[]> => {
-  const r = await pb.collection('chapter_flashcards').getFullList({
-    filter: `chapter = "${chapterId}"`, sort: 'order,created',
-    requestKey: null,
-  });
-  return r as unknown as ChapterFlashcard[];
-};
-export const createChapterFlashcard = async (d: Partial<ChapterFlashcard>): Promise<ChapterFlashcard> =>
-  pb.collection('chapter_flashcards').create(d) as unknown as Promise<ChapterFlashcard>;
-export const updateChapterFlashcard = async (id: string, d: Partial<ChapterFlashcard>): Promise<ChapterFlashcard> =>
-  pb.collection('chapter_flashcards').update(id, d) as unknown as Promise<ChapterFlashcard>;
-export const deleteChapterFlashcard = async (id: string) => pb.collection('chapter_flashcards').delete(id);
-
-export const getChapter = async (id: string): Promise<Chapter> => {
-  const r = await pb.collection('chapters').getOne(id, { requestKey: null });
-  return r as unknown as Chapter;
-};
+// ─── Chapter Flashcards ───────────────────────────────────────
+export const getChapterFlashcards = (chapterId: string): Promise<ChapterFlashcard[]> =>
+  dbGetChapterFlashcards(chapterId);
+export const createChapterFlashcard = (d: Partial<ChapterFlashcard>): Promise<ChapterFlashcard> =>
+  dbCreateChapterFlashcard(d);
+export const updateChapterFlashcard = (id: string, d: Partial<ChapterFlashcard>): Promise<ChapterFlashcard> =>
+  dbUpdateChapterFlashcard(id, d);
+export const deleteChapterFlashcard = (id: string): Promise<void>  => dbDeleteChapterFlashcard(id);
 
 // ─── Solo Decks ───────────────────────────────────────────────
-export const getSoloDecks = async (): Promise<SoloDeck[]> => {
-  const r = await pb.collection('solo_decks').getFullList({ sort: 'created', requestKey: null });
-  return r as unknown as SoloDeck[];
-};
-export const createSoloDeck = async (d: Partial<SoloDeck>): Promise<SoloDeck> =>
-  pb.collection('solo_decks').create(d) as unknown as Promise<SoloDeck>;
-export const updateSoloDeck = async (id: string, d: Partial<SoloDeck>): Promise<SoloDeck> =>
-  pb.collection('solo_decks').update(id, d) as unknown as Promise<SoloDeck>;
-export const deleteSoloDeck = async (id: string) => pb.collection('solo_decks').delete(id);
+export const getSoloDecks  = (): Promise<SoloDeck[]>               => dbGetSoloDecks();
+export const createSoloDeck = (d: Partial<SoloDeck>): Promise<SoloDeck> => dbCreateSoloDeck(d);
+export const updateSoloDeck = (id: string, d: Partial<SoloDeck>): Promise<SoloDeck> => dbUpdateSoloDeck(id, d);
+export const deleteSoloDeck = (id: string): Promise<void>          => dbDeleteSoloDeck(id);
 
 // ─── Solo Flashcards ──────────────────────────────────────────
-export const getSoloFlashcards = async (deckId: string): Promise<SoloFlashcard[]> => {
-  const r = await pb.collection('solo_flashcards').getFullList({
-    filter: `deck = "${deckId}"`, sort: 'order,created',
-    requestKey: null,
-  });
-  return r as unknown as SoloFlashcard[];
-};
-export const createSoloFlashcard = async (d: Partial<SoloFlashcard>): Promise<SoloFlashcard> =>
-  pb.collection('solo_flashcards').create(d) as unknown as Promise<SoloFlashcard>;
-export const updateSoloFlashcard = async (id: string, d: Partial<SoloFlashcard>): Promise<SoloFlashcard> =>
-  pb.collection('solo_flashcards').update(id, d) as unknown as Promise<SoloFlashcard>;
-export const deleteSoloFlashcard = async (id: string) => pb.collection('solo_flashcards').delete(id);
+export const getSoloFlashcards = (deckId: string): Promise<SoloFlashcard[]> =>
+  dbGetSoloFlashcards(deckId);
+export const createSoloFlashcard = (d: Partial<SoloFlashcard>): Promise<SoloFlashcard> =>
+  dbCreateSoloFlashcard(d);
+export const updateSoloFlashcard = (id: string, d: Partial<SoloFlashcard>): Promise<SoloFlashcard> =>
+  dbUpdateSoloFlashcard(id, d);
+export const deleteSoloFlashcard = (id: string): Promise<void>     => dbDeleteSoloFlashcard(id);

@@ -3,17 +3,18 @@ import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, Image
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, FontSize, Spacing, Radius } from '../../../constants/theme';
 import { Book, Chapter, ChapterFlashcard as Flashcard } from '../../../types';
-import { getChapterFlashcards as getFlashcards, deleteChapterFlashcard as deleteFlashcard } from '../../../api/content';
+import { getChapterFlashcards as getFlashcards, deleteChapterFlashcard as deleteFlashcard, createChapterFlashcard } from '../../../api/content';
 import { ConfirmModal }          from '../../../components/shared/ConfirmModal';
-import { FlashcardImportModal, ImportedCard } from '../../../components/shared/FlashcardImportModal';
+import { ImportModal } from '../../../components/shared/ImportModal';
 import { ImageLightbox }         from '../../../components/shared/ImageLightbox';
-import { SwipeableRow }          from '../../../components/shared/Swipeablerow';
-import { CardListItem }          from '../../../components/shared/Cardlistitem';
-import { CardListHeader, SelectionBar } from '../../../components/shared/Cardlistheader';
-import pb, { getFileUrl }        from '../../../api/pb';
+import { SwipeableRow }          from '../../../components/shared/SwipeableRow';
+import { CardListItem }          from '../../../components/shared/CardListItem';
+import { CardListHeader, SelectionBar } from '../../../components/shared/CardListHeader';
 import { AudioPlayer }           from '../../../components/shared/AudioPlayer';
 import { FlashcardFormScreen }   from './FlashcardFormScreen';
 import { exportJson }            from '../../../utils/exportJson';
+import { embedMedia }            from '../../../utils/mediaExport';
+import { ExportNameModal, ExportPrompt } from '../../../components/shared/Exportnamemodal';
 
 const BACK_COLOR = Colors.accent;
 
@@ -33,7 +34,7 @@ export const FlashcardBuilderScreen: React.FC<Props> = ({ chapter, book, onBack 
   const [showImport, setShowImport]     = useState(false);
   const [selecting, setSelecting]       = useState(false);
   const [selected, setSelected]         = useState<Set<string>>(new Set());
-
+  const [exportPrompt, setExportPrompt] = useState<ExportPrompt | null>(null);
   const load = useCallback(async () => {
     setLoading(true);
     try { setCards(await getFlashcards(chapter.id)); }
@@ -48,12 +49,9 @@ export const FlashcardBuilderScreen: React.FC<Props> = ({ chapter, book, onBack 
   });
   const allSelected = selected.size === cards.length && cards.length > 0;
 
-  const handleImport = async (imported: ImportedCard[]) => {
+  const handleImport = async (imported: { front: string; back: string }[]) => {
     for (const card of imported) {
-      const fd = new FormData();
-      fd.append('chapter', chapter.id); fd.append('front', card.front);
-      fd.append('back', card.back);     fd.append('order', '0');
-      await pb.collection('chapter_flashcards').create(fd);
+      await createChapterFlashcard({ chapter: chapter.id, front: card.front, back: card.back, order: 0 });
     }
     await load();
   };
@@ -61,19 +59,36 @@ export const FlashcardBuilderScreen: React.FC<Props> = ({ chapter, book, onBack 
   const handleExportSelected = async () => {
     const chosen = cards.filter(c => selected.has(c.id));
     if (!chosen.length) return;
-    const payload = {
-      version: 1, exportedAt: new Date().toISOString(), type: 'chapter_flashcards',
-      chapter: { title: chapter.title, number: chapter.number },
-      cards: chosen.map(c => ({ front: c.front, back: c.back })),
-    };
-    const slug = chapter.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
-    await exportJson(payload, `flashcards-${slug}.json`);
-    cancelSelect();
+    try {
+      const media: Record<string, string> = {};
+      const exportCards = await Promise.all(chosen.map(async c => ({
+        front: c.front, back: c.back,
+        front_image: await embedMedia(c.front_image, 'images', media),
+        back_image:  await embedMedia(c.back_image,  'images', media),
+        front_audio: await embedMedia(c.front_audio, 'audio',  media),
+        back_audio:  await embedMedia(c.back_audio,  'audio',  media),
+      })));
+      const payload = {
+        version: 2, exportedAt: new Date().toISOString(), type: 'chapter_flashcards',
+        chapter: { title: chapter.title, number: chapter.number },
+        cards: exportCards,
+        media,
+      };
+      const slug = chapter.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
+      await new Promise<void>((resolve) => {
+        setExportPrompt({
+          suggested: `flashcards-${slug}`,
+          onConfirm: async (filename) => { await exportJson(payload, filename); resolve(); },
+        });
+      });
+      cancelSelect();
+    } catch { Alert.alert('Export failed', 'Could not export flashcards.'); }
   };
 
-  const getUrl = (card: Flashcard, field: string) => {
-    const f = (card as any)[field]; if (!f) return null;
-    return getFileUrl('chapter_flashcards', card.id, f);
+  // With SQLite, file fields store the full local URI directly
+  const getUrl = (card: Flashcard, field: string): string | null => {
+    const f = (card as any)[field];
+    return f ? String(f) : null;
   };
 
   if (view === 'create' || view === 'edit') {
@@ -186,7 +201,7 @@ export const FlashcardBuilderScreen: React.FC<Props> = ({ chapter, book, onBack 
         )}
       </ScrollView>
 
-      <FlashcardImportModal visible={showImport} onImport={handleImport} onCancel={() => setShowImport(false)} />
+      <ImportModal visible={showImport} mode="flashcards" onImport={handleImport} onCancel={() => setShowImport(false)} />
       <ConfirmModal
         visible={!!deleteTarget}
         title="Delete Flashcard"
@@ -195,8 +210,9 @@ export const FlashcardBuilderScreen: React.FC<Props> = ({ chapter, book, onBack 
           if (deleteTarget) { await deleteFlashcard(deleteTarget.id).catch(() => {}); await load(); }
           setDeleteTarget(null);
         }}
-        onCancel={() => setDeleteTarget(null)}
+        onCancel={async () => { setDeleteTarget(null); await load(); }}
       />
+      <ExportNameModal prompt={exportPrompt} onClose={() => setExportPrompt(null)} />
     </SafeAreaView>
   );
 };

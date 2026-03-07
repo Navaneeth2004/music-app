@@ -18,6 +18,9 @@ const AUDIO_MIME_TYPES = [
   'audio/*',
 ];
 
+// ─── State: prevent concurrent picker calls ───────────────────
+let isPickingAudio = false;
+
 // ─── Web ──────────────────────────────────────────────────────
 const pickAudioFromWeb = (): Promise<PickedAudio | null> =>
   new Promise(resolve => {
@@ -39,6 +42,13 @@ const pickAudioFromWeb = (): Promise<PickedAudio | null> =>
 
 // ─── Native ───────────────────────────────────────────────────
 const pickAudioNative = async (): Promise<PickedAudio | null> => {
+  // Prevent concurrent picker calls
+  if (isPickingAudio) {
+    console.warn('Audio picker already in progress');
+    return null;
+  }
+
+  isPickingAudio = true;
   try {
     const DP = await import('expo-document-picker');
     const result = await DP.getDocumentAsync({
@@ -55,6 +65,8 @@ const pickAudioNative = async (): Promise<PickedAudio | null> => {
   } catch (e) {
     console.error('Audio picker error:', e);
     return null;
+  } finally {
+    isPickingAudio = false;
   }
 };
 

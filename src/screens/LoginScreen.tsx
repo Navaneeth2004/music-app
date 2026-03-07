@@ -1,96 +1,102 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
-import { Screen } from '../components/layout/Screen';
-import { Button, Input, Card, Heading, BodyText } from '../components/ui';
-import { Colors, FontSize, Spacing } from '../constants/theme';
+import { View, Text, StyleSheet, Pressable, TextInput, ActivityIndicator } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Colors, FontSize, Spacing, Radius } from '../constants/theme';
 
-interface LoginScreenProps {
-  onLogin: (identity: string, password: string) => Promise<void>;
+interface Props {
+  onLogin:        (username: string, password: string) => Promise<void>;
   onGoToRegister: () => void;
-  onBack: () => void;
-  loading: boolean;
-  error: string | null;
+  loading:        boolean;
+  error:          string | null;
 }
 
-export const LoginScreen: React.FC<LoginScreenProps> = ({
-  onLogin, onGoToRegister, onBack, loading, error,
-}) => {
-  const [identity, setIdentity] = useState('');
+export const LoginScreen: React.FC<Props> = ({ onLogin, onGoToRegister, loading, error }) => {
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
+  const canSubmit = username.trim().length > 0 && password.trim().length > 0;
+
   const handleSubmit = () => {
-    if (!identity.trim() || !password.trim()) return;
-    onLogin(identity.trim(), password.trim());
+    if (!canSubmit || loading) return;
+    onLogin(username.trim(), password.trim());
   };
 
   return (
-    <Screen scrollable>
-      <Pressable onPress={onBack} style={styles.backBtn}>
-        <Text style={styles.backText}>← Back</Text>
-      </Pressable>
+    <SafeAreaView style={s.safe}>
+      <View style={s.center}>
+        <Text style={s.icon}>♪</Text>
+        <Text style={s.title}>Study Practice</Text>
+        <Text style={s.subtitle}>Sign in to continue</Text>
 
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.icon}>♪</Text>
-          <Heading style={styles.title}>Welcome back</Heading>
-          <BodyText style={styles.subtitle}>Sign in to continue your practice</BodyText>
-        </View>
-
-        <Card>
-          {error && (
-            <View style={styles.errorBanner}>
-              <Text style={styles.errorText}>{error}</Text>
+        <View style={s.card}>
+          {error ? (
+            <View style={s.errBox}>
+              <Text style={s.errText}>{error}</Text>
             </View>
-          )}
+          ) : null}
 
-          <Input
-            label="Username or Email"
-            value={identity}
-            onChangeText={setIdentity}
-            placeholder="Enter your username or email"
+          <Text style={s.label}>Username</Text>
+          <TextInput
+            style={s.input}
+            value={username}
+            onChangeText={setUsername}
+            placeholder="Enter username"
+            placeholderTextColor={Colors.textMuted}
             autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="next"
           />
 
-          <Input
-            label="Password"
+          <Text style={s.label}>Password</Text>
+          <TextInput
+            style={s.input}
             value={password}
             onChangeText={setPassword}
-            placeholder="Enter your password"
+            placeholder="Enter password"
+            placeholderTextColor={Colors.textMuted}
             secureTextEntry
+            returnKeyType="done"
+            onSubmitEditing={handleSubmit}
           />
 
-          <View style={styles.gap} />
-
-          <Button
-            label="Sign In"
+          <Pressable
             onPress={handleSubmit}
-            loading={loading}
-            disabled={!identity.trim() || !password.trim()}
-          />
-        </Card>
+            disabled={!canSubmit || loading}
+            style={({ pressed }) => [s.btn, (!canSubmit || loading) && s.btnDisabled, pressed && { opacity: 0.8 }]}
+          >
+            {loading
+              ? <ActivityIndicator color="#fff" size="small" />
+              : <Text style={s.btnText}>Sign In</Text>
+            }
+          </Pressable>
+        </View>
 
-        <View style={styles.footer}>
-          <BodyText>Don't have an account? </BodyText>
+        <View style={s.footer}>
+          <Text style={s.footerText}>Don't have an account? </Text>
           <Pressable onPress={onGoToRegister}>
-            <Text style={styles.link}>Create one</Text>
+            <Text style={s.link}>Create one</Text>
           </Pressable>
         </View>
       </View>
-    </Screen>
+    </SafeAreaView>
   );
 };
 
-const styles = StyleSheet.create({
-  backBtn: { paddingTop: Spacing.lg, paddingBottom: Spacing.md, paddingHorizontal: Spacing.xs },
-  backText: { color: Colors.accentLight, fontSize: FontSize.md },
-  container: { flex: 1, justifyContent: 'center', gap: Spacing.lg },
-  header: { alignItems: 'center', marginBottom: Spacing.sm },
-  icon: { fontSize: 40, marginBottom: Spacing.sm },
-  title: { marginBottom: Spacing.xs },
-  subtitle: { textAlign: 'center' },
-  errorBanner: { backgroundColor: `${Colors.error}22`, borderRadius: 8, padding: Spacing.md, marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.error },
-  errorText: { color: Colors.error, fontSize: FontSize.sm },
-  gap: { height: Spacing.sm },
-  footer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
-  link: { color: Colors.accentLight, fontSize: FontSize.md, fontWeight: '600' },
+const s = StyleSheet.create({
+  safe:        { flex: 1, backgroundColor: Colors.background },
+  center:      { flex: 1, justifyContent: 'center', paddingHorizontal: Spacing.xl, gap: Spacing.xs },
+  icon:        { fontSize: 48, textAlign: 'center', marginBottom: Spacing.xs },
+  title:       { fontSize: FontSize.xxl, fontWeight: '800', color: Colors.textPrimary, textAlign: 'center', letterSpacing: -0.5 },
+  subtitle:    { fontSize: FontSize.md, color: Colors.textSecondary, textAlign: 'center', marginBottom: Spacing.lg },
+  card:        { backgroundColor: Colors.surface, borderRadius: Radius.xl, borderWidth: 1, borderColor: Colors.border, padding: Spacing.lg, gap: Spacing.sm },
+  errBox:      { backgroundColor: Colors.error + '22', borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.error, padding: Spacing.md },
+  errText:     { color: Colors.error, fontSize: FontSize.sm },
+  label:       { fontSize: FontSize.sm, fontWeight: '600', color: Colors.textSecondary, marginBottom: 2 },
+  input:       { backgroundColor: Colors.surfaceAlt, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, color: Colors.textPrimary, fontSize: FontSize.md, padding: Spacing.md },
+  btn:         { backgroundColor: Colors.accent, borderRadius: Radius.md, paddingVertical: Spacing.md, alignItems: 'center', marginTop: Spacing.xs },
+  btnDisabled: { opacity: 0.45 },
+  btnText:     { color: '#fff', fontSize: FontSize.md, fontWeight: '700' },
+  footer:      { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: Spacing.md },
+  footerText:  { color: Colors.textSecondary, fontSize: FontSize.md },
+  link:        { color: Colors.accentLight, fontSize: FontSize.md, fontWeight: '600' },
 });

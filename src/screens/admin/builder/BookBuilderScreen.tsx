@@ -1,13 +1,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, FontSize, Spacing, Radius } from '../../../constants/theme';
 import { Book } from '../../../types';
-import { getBooks, createBook, deleteBook, getChapters, deleteChapter, getChapterFlashcards, deleteChapterFlashcard } from '../../../api/content';
+import { getBooks, createBook, updateBook, deleteBook, getChapters, createChapter, updateChapter, deleteChapter, getChapterFlashcards, deleteChapterFlashcard, createChapterFlashcard } from '../../../api/content';
 import { ConfirmModal }    from '../../../components/shared/ConfirmModal';
-import { SwipeableRow }    from '../../../components/shared/Swipeablerow';
-import { SelectionBar }    from '../../../components/shared/Cardlistheader';
+import { SwipeableRow }    from '../../../components/shared/SwipeableRow';
+import { SelectionBar }    from '../../../components/shared/CardListHeader';
 import { exportJson }      from '../../../utils/exportJson';
+import { embedMedia }      from '../../../utils/mediaExport';
+import { restoreMediaMap, remapUri } from '../../../utils/mediaExport';
+import { ExportNameModal, ExportPrompt } from '../../../components/shared/Exportnamemodal';
+import { InfoModal, InfoModalData }      from '../../../components/shared/Infomodal';
+import { ImportModal }                   from '../../../components/shared/ImportModal';
 
 const COLORS = ['#7C6FF7','#4CAF88','#E05C6A','#F0A050','#4A9EE0','#C47ED4'];
 const ICONS  = ['🎼','🎹','🎸','🎺','🎻','🥁','🎵','🎶'];
@@ -29,12 +34,56 @@ export const BookBuilderScreen: React.FC<Props> = ({ onChapters, onBack }) => {
   // selection for export
   const [selecting, setSelecting]       = useState(false);
   const [selected, setSelected]         = useState<Set<string>>(new Set());
+  const [showImport, setShowImport]     = useState(false);
+  const [exportPrompt, setExportPrompt] = useState<ExportPrompt | null>(null);
+  const [infoModal, setInfoModal]       = useState<InfoModalData | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try { setBooks(await getBooks()); } catch { setError('Failed to load.'); } finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // Called by ImportModal with already-validated + type-checked data
+  const handleImport = async (data: any) => {
+    const uriMap = await restoreMediaMap(data.media);
+
+    // Collect book list (ImportModal already validated shape)
+    let booksToImport: any[] = [];
+    if (data.type === 'book' && data.book)                  booksToImport = [data.book];
+    else if (Array.isArray(data.books) && data.books.length) booksToImport = data.books;
+    else if (data.title)                                     booksToImport = [data];
+
+    for (const b of booksToImport) {
+      const book = await createBook({ title: b.title ?? 'Imported', author: b.author ?? '', icon: b.icon ?? '📚', color: b.color ?? '#7C6FF7', order: b.order ?? 0 });
+      for (const ch of (b.chapters ?? [])) {
+        const chapter = await createChapter({ book: book.id, number: ch.number ?? 1, title: ch.title ?? '', subtitle: ch.subtitle ?? '' });
+        if (ch.content) {
+          try {
+            let blocks = JSON.parse(ch.content);
+            if (Object.keys(uriMap).length) {
+              blocks = blocks.map((bl: any) => ({
+                ...bl,
+                imageFile: remapUri(bl.imageFile, 'images', uriMap),
+                audioFile: remapUri(bl.audioFile, 'audio',  uriMap),
+              }));
+            }
+            await updateChapter(chapter.id, { content: JSON.stringify(blocks) } as any);
+          } catch {}
+        }
+        for (const card of (ch.flashcards ?? [])) {
+          await createChapterFlashcard({
+            chapter: chapter.id, front: card.front ?? '', back: card.back ?? '', order: 0,
+            front_image: remapUri(card.front_image, 'images', uriMap),
+            back_image:  remapUri(card.back_image,  'images', uriMap),
+            front_audio: remapUri(card.front_audio, 'audio',  uriMap),
+            back_audio:  remapUri(card.back_audio,  'audio',  uriMap),
+          });
+        }
+      }
+    }
+    await load();
+  };
 
   const cancelSelect = () => { setSelecting(false); setSelected(new Set()); };
   const toggleSelect = (id: string) => setSelected(prev => {
@@ -70,27 +119,52 @@ export const BookBuilderScreen: React.FC<Props> = ({ onChapters, onBack }) => {
     const chosen = books.filter(b => selected.has(b.id));
     if (!chosen.length) return;
     try {
+      // Build all payloads first, then prompt for name (one at a time)
       for (const book of chosen) {
+        const media: Record<string, string> = {};
         const chapters = await getChapters(book.id).catch(() => []);
         const exportChapters = [];
         for (const ch of chapters) {
           const cards = await getChapterFlashcards(ch.id).catch(() => []);
+
+          let blocks: any[] = [];
+          try { blocks = ch.content ? JSON.parse(ch.content as any) : []; } catch {}
+          const exportBlocks = await Promise.all(blocks.map(async (bl: any) => ({
+            ...bl,
+            imageFile: await embedMedia(bl.imageFile, 'images', media),
+            audioFile: await embedMedia(bl.audioFile, 'audio',  media),
+          })));
+
+          const exportCards = await Promise.all(cards.map(async c => ({
+            front: c.front, back: c.back,
+            front_image: await embedMedia(c.front_image, 'images', media),
+            back_image:  await embedMedia(c.back_image,  'images', media),
+            front_audio: await embedMedia(c.front_audio, 'audio',  media),
+            back_audio:  await embedMedia(c.back_audio,  'audio',  media),
+          })));
+
           exportChapters.push({
             number: ch.number, title: ch.title, subtitle: ch.subtitle,
-            content: (ch as any).content ?? null,
-            flashcards: cards.map(c => ({ front: c.front, back: c.back })),
+            content: exportBlocks.length ? JSON.stringify(exportBlocks) : null,
+            flashcards: exportCards,
           });
         }
         const payload = {
-          version: 1, exportedAt: new Date().toISOString(),
-          books: [{ title: book.title, author: book.author, icon: book.icon, color: book.color, order: book.order, chapters: exportChapters }],
-          soloDecks: [],
+          version: 2, exportedAt: new Date().toISOString(), type: 'book',
+          book: { title: book.title, author: book.author, icon: book.icon, color: book.color, order: book.order, chapters: exportChapters },
+          media,
         };
         const slug = book.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
-        await exportJson(payload, `book-${slug}.json`);
+        // Prompt for filename
+        await new Promise<void>((resolve) => {
+          setExportPrompt({
+            suggested: `book-${slug}`,
+            onConfirm: async (filename) => { await exportJson(payload, filename); resolve(); },
+          });
+        });
       }
       cancelSelect();
-    } catch { Alert.alert('Export failed', 'Could not export book.'); }
+    } catch { setInfoModal({ title: 'Export failed', message: 'Could not export book.' }); }
   };
 
   return (
@@ -146,7 +220,12 @@ export const BookBuilderScreen: React.FC<Props> = ({ onChapters, onBack }) => {
           ))}
 
           {!showForm
-            ? <Pressable onPress={() => setShowForm(true)} style={s.addBtn}><Text style={s.addBtnText}>+ Add Book</Text></Pressable>
+            ? <View style={s.addRow}>
+                <Pressable onPress={() => setShowForm(true)} style={s.addBtn}><Text style={s.addBtnText}>+ Add Book</Text></Pressable>
+                <Pressable onPress={() => setShowImport(true)} style={s.importBtn}>
+                  <Text style={s.importBtnText}>⬇ Import</Text>
+                </Pressable>
+              </View>
             : <View style={s.form}>
                 <Text style={s.formTitle}>New Book</Text>
                 <Text style={s.label}>TITLE</Text>
@@ -177,8 +256,11 @@ export const BookBuilderScreen: React.FC<Props> = ({ onChapters, onBack }) => {
         title="Delete Book"
         message={`Delete "${deleteTarget?.title}"? All chapters and flashcards inside will be permanently deleted.`}
         onConfirm={handleDeleteBook}
-        onCancel={() => setDeleteTarget(null)}
+        onCancel={async () => { setDeleteTarget(null); await load(); }}
       />
+      <ExportNameModal prompt={exportPrompt} onClose={() => setExportPrompt(null)} />
+      <InfoModal info={infoModal} onClose={() => setInfoModal(null)} />
+      <ImportModal visible={showImport} mode="book" onImport={handleImport} onCancel={() => setShowImport(false)} />
     </SafeAreaView>
   );
 };
@@ -205,8 +287,11 @@ const s = StyleSheet.create({
   bookAuthor: { fontSize: FontSize.sm, color: Colors.textSecondary },
   chevron:  { color: Colors.textMuted, fontSize: 22 },
 
-  addBtn:     { borderWidth: 1.5, borderColor: Colors.accent + '66', borderStyle: 'dashed', borderRadius: Radius.md, paddingVertical: Spacing.md, alignItems: 'center', marginTop: Spacing.sm },
+  addRow:     { marginTop: Spacing.sm, gap: Spacing.xs },
+  addBtn:     { borderWidth: 1.5, borderColor: Colors.accent + '66', borderStyle: 'dashed', borderRadius: Radius.md, paddingVertical: Spacing.md, alignItems: 'center' },
   addBtnText: { color: Colors.accent, fontSize: FontSize.md, fontWeight: '600' },
+  importBtn:  { borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.md, paddingVertical: Spacing.sm, alignItems: 'center' },
+  importBtnText: { color: Colors.textSecondary, fontSize: FontSize.sm, fontWeight: '600' },
   form:       { backgroundColor: Colors.surface, borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.border, padding: Spacing.lg, gap: Spacing.sm, marginTop: Spacing.md },
   formTitle:  { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary, marginBottom: Spacing.sm },
   label:      { fontSize: FontSize.xs, color: Colors.textMuted, letterSpacing: 1.5, fontWeight: '600' },

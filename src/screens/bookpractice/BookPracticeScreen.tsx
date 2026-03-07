@@ -3,6 +3,8 @@ import { Book, Chapter, ChapterFlashcard as Flashcard, SoloDeck, SoloFlashcard }
 import { BookListScreen, ChapterListScreen, ChapterViewScreen } from './BookChapterScreens';
 import { FlashcardsScreen, SingleCardScreen, ExamScreen } from './FlashcardScreens';
 import { SoloDecksScreen, SoloDeckStudyScreen, SoloExamScreen } from './SoloScreens';
+import { SearchScreen, SearchNavTarget } from '../search/SearchScreen';
+import { getBooks, getChapters, getSoloDecks } from '../../api/content';
 
 type NavView =
   | { screen: 'books' }
@@ -17,15 +19,50 @@ type NavView =
 
 interface BookPracticeScreenProps {
   onDeepNav?: (deep: boolean) => void;
+  showSearch?: boolean;
+  onSearchClose?: () => void;
 }
 
-export const BookPracticeScreen: React.FC<BookPracticeScreenProps> = ({ onDeepNav }) => {
+export const BookPracticeScreen: React.FC<BookPracticeScreenProps> = ({ onDeepNav, showSearch, onSearchClose }) => {
   const [nav, setNav] = useState<NavView>({ screen: 'books' });
   const go = (v: NavView) => setNav(v);
 
   useEffect(() => {
     onDeepNav?.(nav.screen !== 'books');
   }, [nav.screen]);
+
+  const handleSearchNav = async (target: SearchNavTarget) => {
+    onSearchClose?.();
+    try {
+      if (target.screen === 'book') {
+        const books = await getBooks();
+        const book = books.find(b => b.id === target.bookId);
+        if (book) go({ screen: 'chapters', book });
+      } else if (target.screen === 'chapter') {
+        const books = await getBooks();
+        const book = books.find(b => b.id === target.bookId);
+        if (!book) return;
+        const chapters = await getChapters(target.bookId);
+        const chapter = chapters.find(c => c.id === target.chapterId);
+        if (chapter) go({ screen: 'chapter', book, chapter });
+      } else if (target.screen === 'chapter_flashcard') {
+        const books = await getBooks();
+        const book = books.find(b => b.id === target.bookId);
+        if (!book) return;
+        const chapters = await getChapters(target.bookId);
+        const chapter = chapters.find(c => c.id === target.chapterId);
+        if (chapter) go({ screen: 'flashcards', book, chapter });
+      } else if (target.screen === 'solo_deck' || target.screen === 'solo_flashcard') {
+        const decks = await getSoloDecks();
+        const deck = decks.find(d => d.id === target.deckId);
+        if (deck) go({ screen: 'soloCards', deck });
+      }
+    } catch {}
+  };
+
+  if (showSearch) {
+    return <SearchScreen onNavigate={handleSearchNav} />;
+  }
 
   if (nav.screen === 'chapters')
     return <ChapterListScreen book={nav.book}

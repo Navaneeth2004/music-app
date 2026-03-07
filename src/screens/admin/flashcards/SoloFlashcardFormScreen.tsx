@@ -6,18 +6,18 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, FontSize, Spacing, Radius } from '../../../constants/theme';
 import { SoloDeck, SoloFlashcard } from '../../../types';
-import { appendImageToFormData, PickedImage } from '../../../utils/pickImage';
-import { appendAudioToFormData, pickAudio, PickedAudio } from '../../../utils/pickAudio';
-import { MediaChooserModal } from '../../../components/shared/Mediachoosermodal';
+import { PickedImage } from '../../../utils/pickImage';
+import { pickAudio, PickedAudio } from '../../../utils/pickAudio';
+import { MediaChooserModal } from '../../../components/shared/MediaChooserModal';
 import { ImagePickerModal } from '../../../components/shared/ImagePickerModal';
 import { AudioPlayer } from '../../../components/shared/AudioPlayer';
-import pb, { getFileUrl } from '../../../api/pb';
+import { createSoloFlashcard, updateSoloFlashcard } from '../../../api/content';
 
 interface Props {
-  deck: SoloDeck;
+  deck:     SoloDeck;
   editCard: SoloFlashcard | null;
-  onSave: () => void;
-  onBack: () => void;
+  onSave:  () => void;
+  onBack:  () => void;
 }
 
 type ModalState =
@@ -30,23 +30,19 @@ export const SoloFlashcardFormScreen: React.FC<Props> = ({ deck, editCard, onSav
   const [back,  setBack]  = useState(editCard?.back  ?? '');
 
   const [frontImg,  setFrontImg]  = useState<PickedImage | null>(() => {
-    const f = editCard ? (editCard as any).front_image : null;
-    return f ? { uri: getFileUrl('solo_flashcards', editCard!.id, f) } : null;
+    const f = editCard?.front_image; return f ? { uri: f } : null;
   });
   const [backImg,   setBackImg]   = useState<PickedImage | null>(() => {
-    const f = editCard ? (editCard as any).back_image : null;
-    return f ? { uri: getFileUrl('solo_flashcards', editCard!.id, f) } : null;
+    const f = editCard?.back_image;  return f ? { uri: f } : null;
   });
   const [frontImgNew, setFrontImgNew] = useState(false);
   const [backImgNew,  setBackImgNew]  = useState(false);
 
   const [frontAudio, setFrontAudio] = useState<PickedAudio | null>(() => {
-    const f = editCard ? (editCard as any).front_audio : null;
-    return f ? { uri: getFileUrl('solo_flashcards', editCard!.id, f), fileName: f, mimeType: 'audio/mpeg' } : null;
+    const f = editCard?.front_audio; return f ? { uri: f, fileName: 'audio', mimeType: 'audio/mpeg' } : null;
   });
   const [backAudio,  setBackAudio]  = useState<PickedAudio | null>(() => {
-    const f = editCard ? (editCard as any).back_audio : null;
-    return f ? { uri: getFileUrl('solo_flashcards', editCard!.id, f), fileName: f, mimeType: 'audio/mpeg' } : null;
+    const f = editCard?.back_audio;  return f ? { uri: f, fileName: 'audio', mimeType: 'audio/mpeg' } : null;
   });
   const [frontAudioNew, setFrontAudioNew] = useState(false);
   const [backAudioNew,  setBackAudioNew]  = useState(false);
@@ -59,8 +55,7 @@ export const SoloFlashcardFormScreen: React.FC<Props> = ({ deck, editCard, onSav
 
   const handleChooseImage = () => {
     if (modal.type !== 'mediaChooser') return;
-    const side = modal.side;
-    setModal({ type: 'imagePicker', side });
+    setModal({ type: 'imagePicker', side: modal.side });
   };
 
   const handleChooseAudio = async () => {
@@ -86,24 +81,25 @@ export const SoloFlashcardFormScreen: React.FC<Props> = ({ deck, editCard, onSav
     if (!back.trim())  { setError('Back text is required.');  return; }
     setSaving(true); setError(null);
     try {
-      const fd = new FormData();
-      fd.append('deck',  deck.id);
-      fd.append('front', front.trim());
-      fd.append('back',  back.trim());
-      if (!editCard) fd.append('order', '0');
-      if (frontImgNew   && frontImg)   appendImageToFormData(fd, 'front_image', frontImg);
-      if (backImgNew    && backImg)    appendImageToFormData(fd, 'back_image',  backImg);
-      if (frontAudioNew && frontAudio) appendAudioToFormData(fd, 'front_audio', frontAudio);
-      if (backAudioNew  && backAudio)  appendAudioToFormData(fd, 'back_audio',  backAudio);
-      if (editCard) await pb.collection('solo_flashcards').update(editCard.id, fd);
-      else          await pb.collection('solo_flashcards').create(fd);
+      const data: Partial<SoloFlashcard> = {
+        deck:  deck.id,
+        front: front.trim(),
+        back:  back.trim(),
+        order: editCard?.order ?? 0,
+        ...(frontImgNew   ? { front_image: frontImg?.uri  ?? undefined } : {}),
+        ...(backImgNew    ? { back_image:  backImg?.uri   ?? undefined } : {}),
+        ...(frontAudioNew ? { front_audio: frontAudio?.uri ?? undefined } : {}),
+        ...(backAudioNew  ? { back_audio:  backAudio?.uri  ?? undefined } : {}),
+      };
+      if (editCard) await updateSoloFlashcard(editCard.id, data);
+      else          await createSoloFlashcard(data);
       onSave();
-    } catch (e) { console.error(e); setError('Failed to save. Please try again.'); }
-    finally { setSaving(false); }
+    } catch (e) {
+      console.error(e);
+      setError('Failed to save. Please try again.');
+    } finally { setSaving(false); }
   };
 
-  // FRONT = deck color (user-chosen).
-  // BACK = fixed teal — never in the deck color palette so always visually distinct.
   const accentFront = deck.color;
   const accentBack  = '#38BFA1';
 
@@ -137,29 +133,27 @@ export const SoloFlashcardFormScreen: React.FC<Props> = ({ deck, editCard, onSav
       <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         {error && <View style={s.err}><Text style={s.errText}>{error}</Text></View>}
 
-        {/* FRONT — deck color */}
         <SideCard accentColor={accentFront} label="FRONT" hint="Question or term">
           <TextInput style={s.input} value={front} onChangeText={setFront} multiline
             placeholder="Enter question or term… (required)" placeholderTextColor={Colors.textMuted} />
           <SideMedia
             img={frontImg} audio={frontAudio} accentColor={accentFront}
             onAddMedia={() => openMedia('front')}
-            onRemoveImg={() => { setFrontImg(null); setFrontImgNew(false); }}
-            onRemoveAudio={() => { setFrontAudio(null); setFrontAudioNew(false); }}
+            onRemoveImg={() => { setFrontImg(null); setFrontImgNew(true); }}
+            onRemoveAudio={() => { setFrontAudio(null); setFrontAudioNew(true); }}
           />
         </SideCard>
 
         <Divider />
 
-        {/* BACK — purple accent, always different from FRONT */}
         <SideCard accentColor={accentBack} label="BACK" hint="Answer or definition">
           <TextInput style={s.input} value={back} onChangeText={setBack} multiline
             placeholder="Enter answer or definition… (required)" placeholderTextColor={Colors.textMuted} />
           <SideMedia
             img={backImg} audio={backAudio} accentColor={accentBack}
             onAddMedia={() => openMedia('back')}
-            onRemoveImg={() => { setBackImg(null); setBackImgNew(false); }}
-            onRemoveAudio={() => { setBackAudio(null); setBackAudioNew(false); }}
+            onRemoveImg={() => { setBackImg(null); setBackImgNew(true); }}
+            onRemoveAudio={() => { setBackAudio(null); setBackAudioNew(true); }}
           />
         </SideCard>
       </ScrollView>

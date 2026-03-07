@@ -53,30 +53,42 @@ export const FlashcardBookPickerScreen: React.FC<FlashcardBookPickerScreenProps>
         {loading
           ? <ActivityIndicator color={Colors.accent} style={{ marginTop: Spacing.xl }} />
           : view.screen === 'books'
-            ? books.map(book => (
-                <Pressable key={book.id} onPress={() => pickBook(book)} style={({ pressed }) => [styles.card, pressed && { opacity: 0.75 }]}>
-                  <View style={[styles.bookCover, { backgroundColor: book.color }]}>
-                    <Text style={{ fontSize: 22 }}>{book.icon}</Text>
-                  </View>
-                  <View style={styles.cardMeta}>
-                    <Text style={styles.cardTitle}>{book.title}</Text>
-                    <Text style={styles.cardSub}>{book.author}</Text>
-                  </View>
-                  <Text style={styles.chevron}>›</Text>
-                </Pressable>
-              ))
-            : chapters.map(ch => (
-                <Pressable key={ch.id} onPress={() => setView({ screen: 'flashcards', chapter: ch, book: (view as any).book })} style={({ pressed }) => [styles.card, pressed && { opacity: 0.75 }]}>
-                  <View style={[styles.chapterNum, { borderColor: (view as any).book?.color + '55' }]}>
-                    <Text style={[styles.chapterNumText, { color: (view as any).book?.color }]}>{ch.number}</Text>
-                  </View>
-                  <View style={styles.cardMeta}>
-                    <Text style={styles.cardTitle}>{ch.title}</Text>
-                    {ch.subtitle ? <Text style={styles.cardSub}>{ch.subtitle}</Text> : null}
-                  </View>
-                  <Text style={styles.chevron}>›</Text>
-                </Pressable>
-              ))
+            ? books.length === 0
+              ? <View style={styles.empty}>
+                  <Text style={styles.emptyIcon}>📚</Text>
+                  <Text style={styles.emptyTitle}>No books yet</Text>
+                  <Text style={styles.emptySub}>Create a book in the Textbooks section first</Text>
+                </View>
+              : books.map(book => (
+                  <Pressable key={book.id} onPress={() => pickBook(book)} style={({ pressed }) => [styles.card, pressed && { opacity: 0.75 }]}>
+                    <View style={[styles.bookCover, { backgroundColor: book.color }]}>
+                      <Text style={{ fontSize: 22 }}>{book.icon}</Text>
+                    </View>
+                    <View style={styles.cardMeta}>
+                      <Text style={styles.cardTitle}>{book.title}</Text>
+                      <Text style={styles.cardSub}>{book.author}</Text>
+                    </View>
+                    <Text style={styles.chevron}>›</Text>
+                  </Pressable>
+                ))
+            : chapters.length === 0
+              ? <View style={styles.empty}>
+                  <Text style={styles.emptyIcon}>📖</Text>
+                  <Text style={styles.emptyTitle}>No chapters yet</Text>
+                  <Text style={styles.emptySub}>Add chapters to this book first</Text>
+                </View>
+              : chapters.map(ch => (
+                  <Pressable key={ch.id} onPress={() => setView({ screen: 'flashcards', chapter: ch, book: (view as any).book })} style={({ pressed }) => [styles.card, pressed && { opacity: 0.75 }]}>
+                    <View style={[styles.chapterNum, { borderColor: (view as any).book?.color + '55' }]}>
+                      <Text style={[styles.chapterNumText, { color: (view as any).book?.color }]}>{ch.number}</Text>
+                    </View>
+                    <View style={styles.cardMeta}>
+                      <Text style={styles.cardTitle}>{ch.title}</Text>
+                      {ch.subtitle ? <Text style={styles.cardSub}>{ch.subtitle}</Text> : null}
+                    </View>
+                    <Text style={styles.chevron}>›</Text>
+                  </Pressable>
+                ))
         }
       </ScrollView>
     </SafeAreaView>
@@ -98,4 +110,8 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: FontSize.md, fontWeight: '600', color: Colors.textPrimary },
   cardSub: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 2 },
   chevron: { color: Colors.textMuted, fontSize: 22 },
+  empty: { alignItems: 'center', paddingVertical: Spacing.xxl, gap: Spacing.sm },
+  emptyIcon: { fontSize: 44 },
+  emptyTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary },
+  emptySub: { fontSize: FontSize.md, color: Colors.textSecondary, textAlign: 'center' },
 });

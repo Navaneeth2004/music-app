@@ -1,19 +1,100 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, Pressable, ScrollView, ActivityIndicator, Image } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, Pressable, ScrollView, ActivityIndicator, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors, Spacing } from '../../constants/theme';
+import { Colors, Spacing, Radius, FontSize } from '../../constants/theme';
 import { Book, Chapter } from '../../types';
 import { ContentBlock } from '../../types/blocks';
 import { getBooks, getChapters, getChapter } from '../../api/content';
-import { getFileUrl } from '../../api/pb';
 import { s, bs, RichText, BackButton, Empty, ZoomableImage } from './practiceShared';
 import { AudioPlayer } from '../../components/shared/AudioPlayer';
+import { getFavorites, toggleFavorite } from '../../utils/favorites';
+import { getHidden, toggleHidden } from '../../utils/hidden';
+import { useAuth } from '../../context/AuthContext';
+
+// ─── Long-press context menu ───────────────────────────────────
+const ContextMenu: React.FC<{
+  visible: boolean;
+  title: string;
+  isHidden: boolean;
+  isPinned?: boolean;
+  onHide: () => void;
+  onPin?: () => void;
+  onClose: () => void;
+}> = ({ visible, title, isHidden, isPinned, onHide, onPin, onClose }) => (
+  <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Pressable style={cm.overlay} onPress={onClose}>
+      <View style={cm.box}>
+        <Text style={cm.label} numberOfLines={1}>{title}</Text>
+        {onPin && (
+          <Pressable onPress={() => { onPin(); onClose(); }} style={cm.row}>
+            <Text style={cm.rowIcon}>{isPinned ? '★' : '☆'}</Text>
+            <Text style={cm.rowText}>{isPinned ? 'Unpin' : 'Pin to top'}</Text>
+          </Pressable>
+        )}
+        <Pressable onPress={() => { onHide(); onClose(); }} style={cm.row}>
+          <Text style={cm.rowIcon}>{isHidden ? '👁️' : '🙈'}</Text>
+          <Text style={cm.rowText}>{isHidden ? 'Show for students' : 'Hide from students'}</Text>
+        </Pressable>
+        <Pressable onPress={onClose} style={[cm.row, cm.cancelRow]}>
+          <Text style={cm.cancelText}>Cancel</Text>
+        </Pressable>
+      </View>
+    </Pressable>
+  </Modal>
+);
+
+const cm = {
+  overlay:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' as const, padding: Spacing.lg },
+  box:       { backgroundColor: '#1E1E2E', borderRadius: Radius.xl, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', overflow: 'hidden' as const },
+  label:     { fontSize: FontSize.xs, fontWeight: '700' as const, color: Colors.textMuted, textAlign: 'center' as const, paddingVertical: Spacing.sm, paddingHorizontal: Spacing.lg, letterSpacing: 0.5, textTransform: 'uppercase' as const, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' },
+  row:       { flexDirection: 'row' as const, alignItems: 'center' as const, paddingVertical: 14, paddingHorizontal: Spacing.lg, gap: Spacing.md, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
+  rowIcon:   { fontSize: 18, width: 26 },
+  rowText:   { fontSize: FontSize.md, color: Colors.textPrimary, fontWeight: '500' as const },
+  cancelRow: { borderBottomWidth: 0 },
+  cancelText:{ flex: 1, textAlign: 'center' as const, fontSize: FontSize.md, color: Colors.textSecondary, fontWeight: '600' as const },
+};
 
 // ─── Book List ─────────────────────────────────────────────────
 export const BookListScreen: React.FC<{ onBook: (b: Book) => void; onSoloDecks: () => void }> = ({ onBook, onSoloDecks }) => {
-  const [books, setBooks] = useState<Book[]>([]);
+  const { isAdmin } = useAuth();
+  const [books, setBooks]     = useState<Book[]>([]);
   const [loading, setLoading] = useState(true);
-  useEffect(() => { getBooks().then(setBooks).finally(() => setLoading(false)); }, []);
+  const [pinned, setPinned]   = useState<Set<string>>(new Set());
+  const [hidden, setHidden]   = useState<Set<string>>(new Set());
+  const [menu, setMenu]       = useState<Book | null>(null);
+
+  const load = useCallback(async () => {
+    const [b, p, h] = await Promise.all([
+      getBooks(),
+      getFavorites('book'),
+      getHidden('book'),
+    ]);
+    setBooks(b);
+    setPinned(p);
+    setHidden(h);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handlePin = async (id: string) => {
+    await toggleFavorite('book', id);
+    setPinned(await getFavorites('book'));
+  };
+
+  const handleToggleHide = async (id: string) => {
+    await toggleHidden('book', id);
+    setHidden(await getHidden('book'));
+  };
+
+  // Students don't see hidden books; admins see all with a dim badge
+  const visible = isAdmin ? books : books.filter(b => !hidden.has(b.id));
+
+  const sorted = [...visible].sort((a, b) => {
+    const ap = pinned.has(a.id) ? 0 : 1;
+    const bp = pinned.has(b.id) ? 0 : 1;
+    return ap - bp;
+  });
 
   return (
     <SafeAreaView style={s.safe}>
@@ -22,7 +103,7 @@ export const BookListScreen: React.FC<{ onBook: (b: Book) => void; onSoloDecks: 
         <Text style={s.pageSubtitle}>Choose a book to study from</Text>
         {loading
           ? <ActivityIndicator style={{ marginTop: Spacing.xl }} />
-          : books.length === 0
+          : visible.length === 0
             ? <>
                 <Empty icon="📚" title="No books yet" subtitle="Books will appear here once added" />
                 <Pressable onPress={onSoloDecks} style={[s.soloBtn, { marginTop: Spacing.md }]}>
@@ -32,19 +113,38 @@ export const BookListScreen: React.FC<{ onBook: (b: Book) => void; onSoloDecks: 
                 </Pressable>
               </>
             : <>
-                {books.map(book => (
-                  <Pressable key={book.id} onPress={() => onBook(book)}
-                    style={({ pressed }) => [s.bookCard, pressed && s.pressed]}>
-                    <View style={[s.bookCover, { backgroundColor: book.color }]}>
-                      <Text style={{ fontSize: 26 }}>{book.icon}</Text>
-                    </View>
-                    <View style={s.bookMeta}>
-                      <Text style={s.bookTitle}>{book.title}</Text>
-                      <Text style={s.bookAuthor}>{book.author}</Text>
-                    </View>
-                    <Text style={s.chevron}>›</Text>
-                  </Pressable>
-                ))}
+                {pinned.size > 0 && <Text style={s.sectionLabel}>PINNED</Text>}
+                {sorted.map((book, idx) => {
+                  const isPinned  = pinned.has(book.id);
+                  const isHid     = hidden.has(book.id);
+                  const wasFirst  = idx === 0 && !isPinned && pinned.size > 0;
+                  return (
+                    <React.Fragment key={book.id}>
+                      {wasFirst && <Text style={[s.sectionLabel, { marginTop: Spacing.md }]}>ALL BOOKS</Text>}
+                      <Pressable
+                        onPress={() => onBook(book)}
+                        onLongPress={() => isAdmin && setMenu(book)}
+                        delayLongPress={400}
+                        style={({ pressed }) => [s.bookCard, pressed && s.pressed, isHid && { opacity: 0.45 }]}
+                      >
+                        <View style={[s.bookCover, { backgroundColor: book.color }]}>
+                          <Text style={{ fontSize: 26 }}>{book.icon}</Text>
+                        </View>
+                        <View style={s.bookMeta}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={s.bookTitle}>{book.title}</Text>
+                            {isAdmin && isHid && <Text style={{ fontSize: 12 }}>🙈</Text>}
+                          </View>
+                          <Text style={s.bookAuthor}>{book.author}</Text>
+                        </View>
+                        <Pressable onPress={() => handlePin(book.id)} hitSlop={12} style={{ padding: 6 }}>
+                          <Text style={{ fontSize: 20, opacity: isPinned ? 1 : 0.3 }}>⭐</Text>
+                        </Pressable>
+                        <Text style={s.chevron}>›</Text>
+                      </Pressable>
+                    </React.Fragment>
+                  );
+                })}
                 <Pressable onPress={onSoloDecks} style={[s.soloBtn, { marginTop: Spacing.md }]}>
                   <Text style={s.soloBtnIcon}>💡</Text>
                   <Text style={s.soloBtnText}>Solo Decks</Text>
@@ -53,6 +153,17 @@ export const BookListScreen: React.FC<{ onBook: (b: Book) => void; onSoloDecks: 
               </>
         }
       </ScrollView>
+      {menu && (
+        <ContextMenu
+          visible
+          title={menu.title}
+          isHidden={hidden.has(menu.id)}
+          isPinned={pinned.has(menu.id)}
+          onHide={() => handleToggleHide(menu.id)}
+          onPin={() => handlePin(menu.id)}
+          onClose={() => setMenu(null)}
+        />
+      )}
     </SafeAreaView>
   );
 };
@@ -63,9 +174,30 @@ export const ChapterListScreen: React.FC<{
   onChapter: (c: Chapter) => void;
   onBack: () => void;
 }> = ({ book, onChapter, onBack }) => {
+  const { isAdmin } = useAuth();
   const [chapters, setChapters] = useState<Chapter[]>([]);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => { getChapters(book.id).then(setChapters).finally(() => setLoading(false)); }, []);
+  const [loading, setLoading]   = useState(true);
+  const [hidden, setHidden]     = useState<Set<string>>(new Set());
+  const [menu, setMenu]         = useState<Chapter | null>(null);
+
+  const load = useCallback(async () => {
+    const [ch, h] = await Promise.all([
+      getChapters(book.id),
+      getHidden('chapter'),
+    ]);
+    setChapters(ch);
+    setHidden(h);
+    setLoading(false);
+  }, [book.id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleToggleHide = async (id: string) => {
+    await toggleHidden('chapter', id);
+    setHidden(await getHidden('chapter'));
+  };
+
+  const visible = isAdmin ? chapters : chapters.filter(c => !hidden.has(c.id));
 
   return (
     <SafeAreaView style={s.safe}>
@@ -83,23 +215,42 @@ export const ChapterListScreen: React.FC<{
         <Text style={s.sectionLabel}>CHAPTERS</Text>
         {loading
           ? <ActivityIndicator />
-          : chapters.length === 0
+          : visible.length === 0
             ? <Empty icon="📖" title="No chapters yet" />
-            : chapters.map(ch => (
-                <Pressable key={ch.id} onPress={() => onChapter(ch)}
-                  style={({ pressed }) => [s.chCard, pressed && s.pressed]}>
-                  <View style={[s.chNum, { borderColor: book.color + '44' }]}>
-                    <Text style={[s.chNumText, { color: book.color }]}>{ch.number}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.chTitle}>{ch.title}</Text>
-                    {ch.subtitle ? <Text style={s.chSub}>{ch.subtitle}</Text> : null}
-                  </View>
-                  <Text style={s.chevron}>›</Text>
-                </Pressable>
-              ))
+            : visible.map(ch => {
+                const isHid = hidden.has(ch.id);
+                return (
+                  <Pressable key={ch.id}
+                    onPress={() => onChapter(ch)}
+                    onLongPress={() => isAdmin && setMenu(ch)}
+                    delayLongPress={400}
+                    style={({ pressed }) => [s.chCard, pressed && s.pressed, isHid && { opacity: 0.45 }]}
+                  >
+                    <View style={[s.chNum, { borderColor: book.color + '44' }]}>
+                      <Text style={[s.chNumText, { color: book.color }]}>{ch.number}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={s.chTitle}>{ch.title}</Text>
+                        {isAdmin && isHid && <Text style={{ fontSize: 12 }}>🙈</Text>}
+                      </View>
+                      {ch.subtitle ? <Text style={s.chSub}>{ch.subtitle}</Text> : null}
+                    </View>
+                    <Text style={s.chevron}>›</Text>
+                  </Pressable>
+                );
+              })
         }
       </ScrollView>
+      {menu && (
+        <ContextMenu
+          visible
+          title={`Chapter ${menu.number}: ${menu.title}`}
+          isHidden={hidden.has(menu.id)}
+          onHide={() => handleToggleHide(menu.id)}
+          onClose={() => setMenu(null)}
+        />
+      )}
     </SafeAreaView>
   );
 };
@@ -172,15 +323,13 @@ const RenderBlock: React.FC<{ block: ContentBlock; chapterRecord: any }> = ({ bl
     </View>
   );
   if (b.type === 'image') {
-    const validFile = b.imageFile && b.imageFile.length > 4 ? b.imageFile : null;
-    const imgUri = validFile ? getFileUrl('chapters', chapterRecord.id, validFile) : (b.imageUrl ?? null);
+    const imgUri = b.imageFile ?? b.imageUrl ?? null;
     if (!imgUri) return null;
     return <ZoomableImage uri={imgUri} style={bs.image} />;
   }
   if (b.type === 'audio') {
-    const validFile = b.audioFile && b.audioFile.length > 4 ? b.audioFile : null;
-    if (!validFile) return null;
-    const uri = getFileUrl('chapters', chapterRecord.id, validFile);
+    const uri = b.audioFile ?? null;
+    if (!uri) return null;
     return (
       <View style={bs.audioWrap}>
         <AudioPlayer uri={uri} accentColor={Colors.accent} />

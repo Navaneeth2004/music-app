@@ -5,17 +5,16 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DraggableFlatList, { RenderItemParams } from 'react-native-draggable-flatlist';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
 import { Colors, FontSize, Spacing, Radius } from '../../../constants/theme';
 import { Book, Chapter } from '../../../types';
 import { ContentBlock, BlockType } from '../../../types/blocks';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { updateChapter } from '../../../api/content';
 import { ConfirmModal } from '../../../components/shared/ConfirmModal';
-import { appendImageToFormData } from '../../../utils/pickImage';
-import { appendAudioToFormData, pickAudio, PickedAudio } from '../../../utils/pickAudio';
+import { pickAudio, PickedAudio } from '../../../utils/pickAudio';
 import { ImagePickerModal } from '../../../components/shared/ImagePickerModal';
 import { AudioPlayer } from '../../../components/shared/AudioPlayer';
-import pb, { getFileUrl } from '../../../api/pb';
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 
@@ -60,6 +59,8 @@ export const BlockEditorScreen: React.FC<Props> = ({ chapter, book, onBack }) =>
   const [blocks, setBlocks] = useState<ContentBlock[]>([]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [hasDraft, setHasDraft] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [insertAfter, setInsertAfter] = useState<string | null>(null);
@@ -67,6 +68,9 @@ export const BlockEditorScreen: React.FC<Props> = ({ chapter, book, onBack }) =>
   const [modalText, setModalText] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
+  const swipeRefs = useRef<Map<string, Swipeable | null>>(new Map());
+
+  const DRAFT_KEY = `block_draft_${chapter.id}`;
 
   // Pending images: blockId -> PickedImage (local uri, not yet uploaded to PB).
   // Stored in a ref so ImageEditor reads the latest value without stale closure issues.
@@ -88,47 +92,56 @@ export const BlockEditorScreen: React.FC<Props> = ({ chapter, book, onBack }) =>
     setPendingVersion(v => v + 1);
   };
 
+  // Load: prefer draft over saved content
   useEffect(() => {
-    try {
-      const raw = (chapter as any).content;
-      if (raw) setBlocks(typeof raw === 'string' ? JSON.parse(raw) : raw);
-    } catch {}
+    const load = async () => {
+      try {
+        const draftRaw = await AsyncStorage.getItem(DRAFT_KEY);
+        if (draftRaw) {
+          setBlocks(JSON.parse(draftRaw));
+          setHasDraft(true);
+          return;
+        }
+      } catch {}
+      try {
+        const raw = (chapter as any).content;
+        if (raw) setBlocks(typeof raw === 'string' ? JSON.parse(raw) : raw);
+      } catch {}
+    };
+    load();
   }, []);
+
+  // Draft is ONLY saved when user explicitly presses "Draft" — no auto-save
+
+  const saveDraft = async (b: ContentBlock[]) => {
+    await AsyncStorage.setItem(DRAFT_KEY, JSON.stringify(b)).catch(() => {});
+    setHasDraft(true);
+    setIsDirty(false);
+  };
 
   const save = async (b: ContentBlock[]) => {
     setSaving(true);
     try {
-      // Upload any pending images, embed their PB urls into the blocks before saving
       let finalBlocks = [...b];
       for (const [blockId, picked] of pendingImages.current.entries()) {
-        try {
-          const fd = new FormData();
-          appendImageToFormData(fd, 'images', picked);
-          const record = await pb.collection('chapters').update(chapter.id, fd);
-          // images field can be a string (single file) or array — normalise to array
-          const rawImgs = record.images;
-          const imgs: string[] = Array.isArray(rawImgs) ? rawImgs : (rawImgs ? [rawImgs] : []);
-          const filename = imgs[imgs.length - 1];
-          finalBlocks = finalBlocks.map(bl => bl.id === blockId ? { ...bl, imageFile: filename, imageUrl: undefined } : bl);
-          pendingImages.current.delete(blockId);
-        } catch (e) { console.error('Image upload failed for block', blockId, e); }
+        finalBlocks = finalBlocks.map(bl =>
+          bl.id === blockId ? { ...bl, imageFile: picked.uri, imageUrl: undefined } : bl
+        );
+        pendingImages.current.delete(blockId);
       }
-      // Upload any pending audios — stored in chapters.audios field (multiple files)
       for (const [blockId, picked] of pendingAudios.current.entries()) {
-        try {
-          const fd = new FormData();
-          appendAudioToFormData(fd, 'audios', picked);
-          const record = await pb.collection('chapters').update(chapter.id, fd);
-          const rawAudios = record.audios;
-          const audios: string[] = Array.isArray(rawAudios) ? rawAudios : (rawAudios ? [rawAudios] : []);
-          const filename = audios[audios.length - 1];
-          finalBlocks = finalBlocks.map(bl => bl.id === blockId ? { ...bl, audioFile: filename } : bl);
-          pendingAudios.current.delete(blockId);
-        } catch (e) { console.error('Audio upload failed for block', blockId, e); }
+        finalBlocks = finalBlocks.map(bl =>
+          bl.id === blockId ? { ...bl, audioFile: picked.uri } : bl
+        );
+        pendingAudios.current.delete(blockId);
       }
       setPendingVersion(v => v + 1);
       setBlocks(finalBlocks);
       await updateChapter(chapter.id, { content: JSON.stringify(finalBlocks) } as any);
+      // Clear draft after successful save
+      await AsyncStorage.removeItem(DRAFT_KEY).catch(() => {});
+      setHasDraft(false);
+      setIsDirty(false);
       setSaved(true); setTimeout(() => setSaved(false), 2000);
     } catch {}
     finally { setSaving(false); }
@@ -150,11 +163,14 @@ export const BlockEditorScreen: React.FC<Props> = ({ chapter, book, onBack }) =>
       }
       return [...prev, nb];
     });
+    setIsDirty(true);
     setShowPicker(false); setInsertAfter(null);
   };
 
-  const upd = (id: string, u: Partial<ContentBlock>) =>
+  const upd = (id: string, u: Partial<ContentBlock>) => {
     setBlocks(prev => prev.map(b => b.id === id ? { ...b, ...u } : b));
+    setIsDirty(true);
+  };
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -164,12 +180,28 @@ export const BlockEditorScreen: React.FC<Props> = ({ chapter, book, onBack }) =>
         <Pressable onPress={onBack} style={s.backBtn}>
           <Text style={s.backText}>← Back</Text>
         </Pressable>
-        <Text style={s.headerTitle} numberOfLines={1}>{chapter.title}</Text>
+        <View style={{ flex: 1, alignItems: 'center' }}>
+          <Text style={s.headerTitle} numberOfLines={1}>{chapter.title}</Text>
+          {hasDraft && !isEditMode && !isDirty && (
+            <View style={s.draftBadge}><Text style={s.draftBadgeText}>📝 Draft saved</Text></View>
+          )}
+        </View>
         {isEditMode ? (
-          <Pressable onPress={async () => { await save(blocks); setIsEditMode(false); }}
-            style={[s.headerBtn, s.saveBtn]} disabled={saving}>
-            {saving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={s.saveBtnText}>{saved ? '✓' : 'Save'}</Text>}
-          </Pressable>
+          <View style={{ flexDirection: 'row', gap: 6 }}>
+            <Pressable
+              onPress={() => saveDraft(blocks)}
+              disabled={!isDirty}
+              style={[s.headerBtn, isDirty ? s.draftBtnActive : s.draftBtnIdle]}
+            >
+              <Text style={[s.draftBtnText, { color: isDirty ? Colors.warning : Colors.textMuted }]}>
+                {hasDraft && !isDirty ? '✓ Drafted' : 'Draft'}
+              </Text>
+            </Pressable>
+            <Pressable onPress={async () => { await save(blocks); setIsEditMode(false); }}
+              style={[s.headerBtn, s.saveBtn]} disabled={saving}>
+              {saving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={s.saveBtnText}>{saved ? '✓' : 'Save'}</Text>}
+            </Pressable>
+          </View>
         ) : (
           <Pressable onPress={() => setIsEditMode(true)} style={[s.headerBtn, s.editBtn]}>
             <Text style={s.editBtnText}>✏️ Edit</Text>
@@ -196,31 +228,46 @@ export const BlockEditorScreen: React.FC<Props> = ({ chapter, book, onBack }) =>
         <DraggableFlatList
           data={blocks}
           keyExtractor={b => b.id}
-          onDragEnd={({ data }) => setBlocks(data)}
+          onDragEnd={({ data }) => { setBlocks(data); setIsDirty(true); }}
           contentContainerStyle={s.content}
           keyboardShouldPersistTaps="handled"
           renderItem={({ item: block, getIndex, drag, isActive }: RenderItemParams<ContentBlock>) => {
             const idx = getIndex() ?? 0;
             return (
-              <EditBlock
-                key={block.id}
-                block={block}
-                isFirst={idx === 0}
-                isLast={idx === blocks.length - 1}
-                chapterId={chapter.id}
-                onUpdate={u => upd(block.id, u)}
-                onDelete={() => setDeleteTarget(block.id)}
-                onDrag={drag}
-                isActive={isActive}
-                onToggle={() => upd(block.id, { collapsed: !block.collapsed })}
-                onAddAfter={() => { setInsertAfter(block.id); setShowPicker(true); }}
-                onOpenModal={() => { setModalBlock(block); setModalText(block.text ?? ''); }}
-                chapterRecord={chapter}
-                pendingImage={pendingImages.current.get(block.id) ?? null}
-                onSetPending={(img) => setPending(block.id, img)}
-                pendingAudio={pendingAudios.current.get(block.id) ?? null}
-                onSetPendingAudio={(audio) => setPendingAudio(block.id, audio)}
-              />
+              <Swipeable
+                ref={(r) => {
+                  if (r !== null) {
+                    swipeRefs.current.set(block.id, r);
+                  } else {
+                    swipeRefs.current.delete(block.id);
+                  }
+                }}
+                renderRightActions={() => <View style={{ width: 60 }} />}
+                onSwipeableWillOpen={() => setDeleteTarget(block.id)}
+                overshootRight={false}
+                friction={2}
+                rightThreshold={60}
+              >
+                <EditBlock
+                  key={block.id}
+                  block={block}
+                  isFirst={idx === 0}
+                  isLast={idx === blocks.length - 1}
+                  chapterId={chapter.id}
+                  onUpdate={u => upd(block.id, u)}
+                  onDelete={() => setDeleteTarget(block.id)}
+                  onDrag={drag}
+                  isActive={isActive}
+                  onToggle={() => upd(block.id, { collapsed: !block.collapsed })}
+                  onAddAfter={() => { setInsertAfter(block.id); setShowPicker(true); }}
+                  onOpenModal={() => { setModalBlock(block); setModalText(block.text ?? ''); }}
+                  chapterRecord={chapter}
+                  pendingImage={pendingImages.current.get(block.id) ?? null}
+                  onSetPending={(img) => setPending(block.id, img)}
+                  pendingAudio={pendingAudios.current.get(block.id) ?? null}
+                  onSetPendingAudio={(audio) => setPendingAudio(block.id, audio)}
+                />
+              </Swipeable>
             );
           }}
           ListFooterComponent={
@@ -291,8 +338,16 @@ export const BlockEditorScreen: React.FC<Props> = ({ chapter, book, onBack }) =>
         visible={!!deleteTarget}
         title="Delete Block"
         message="Remove this block? This cannot be undone."
-        onConfirm={() => { setBlocks(prev => prev.filter(b => b.id !== deleteTarget)); setDeleteTarget(null); }}
-        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          swipeRefs.current.get(deleteTarget!)?.close();
+          setBlocks(prev => prev.filter(b => b.id !== deleteTarget));
+          setIsDirty(true);
+          setDeleteTarget(null);
+        }}
+        onCancel={() => {
+          swipeRefs.current.get(deleteTarget!)?.close();
+          setDeleteTarget(null);
+        }}
       />
       </SafeAreaView>
     </GestureHandlerRootView>
@@ -316,15 +371,15 @@ const PreviewBlock: React.FC<{ block: ContentBlock; chapterRecord: any }> = ({ b
     </View>
   );
   if (b.type === 'image') {
-    const validFile = b.imageFile && b.imageFile.length > 4 ? b.imageFile : null;
-    const imgUri = validFile ? getFileUrl('chapters', chapterRecord.id, validFile) : b.imageUrl ?? null;
+    // imageFile stores a full local URI with SQLite (or legacy PB filename for old data)
+    const imgUri = b.imageFile ?? b.imageUrl ?? null;
     if (!imgUri) return null;
     return <Image source={{ uri: imgUri }} style={pv.image} resizeMode="contain" />;
   }
   if (b.type === 'audio') {
-    const validFile = b.audioFile && b.audioFile.length > 4 ? b.audioFile : null;
-    if (!validFile) return null;
-    const uri = getFileUrl('chapters', chapterRecord.id, validFile);
+    // audioFile stores a full local URI with SQLite
+    const uri = b.audioFile ?? null;
+    if (!uri) return null;
     return (
       <View style={pv.audioWrap}>
         <AudioPlayer uri={uri} accentColor={Colors.accent} />
@@ -418,9 +473,6 @@ const EditBlock: React.FC<EditBlockProps> = ({
           <Pressable onLongPress={onDrag} delayLongPress={150} hitSlop={8} style={eb.dragBtn}>
             <Text style={eb.dragBtnText}>☰</Text>
           </Pressable>
-          <Pressable onPress={onDelete} hitSlop={8} style={eb.deleteBtn}>
-            <Text style={eb.deleteBtnText}>🗑</Text>
-          </Pressable>
           <Text style={eb.arrow}>{block.collapsed ? '▼' : '▲'}</Text>
         </View>
       </Pressable>
@@ -461,7 +513,7 @@ const EditBlock: React.FC<EditBlockProps> = ({
 };
 
 const eb = StyleSheet.create({
-  card: { backgroundColor: Colors.surface, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, borderLeftWidth: 3, marginBottom: Spacing.sm, overflow: 'hidden' },
+  card: { backgroundColor: Colors.surface, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, borderLeftWidth: 3, marginBottom: Spacing.sm },
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
   tag: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 999, paddingHorizontal: Spacing.sm, paddingVertical: 3 },
   tagIcon: { fontSize: FontSize.sm, fontWeight: '800' },
@@ -471,8 +523,6 @@ const eb = StyleSheet.create({
   dragHandle: { flexDirection: 'row', gap: 2, backgroundColor: Colors.surfaceAlt, borderRadius: Radius.sm, paddingHorizontal: 4 },
   dragBtn: { padding: 4 },
   dragBtnText: { color: Colors.textSecondary, fontSize: FontSize.md, fontWeight: '700' },
-  deleteBtn: { padding: 4 },
-  deleteBtnText: { fontSize: FontSize.md },
   arrow: { color: Colors.textMuted, fontSize: FontSize.xs, marginLeft: 2 },
   body: { paddingHorizontal: Spacing.md, paddingBottom: Spacing.md },
   dividerLine: { height: 1, backgroundColor: Colors.border, marginVertical: Spacing.sm },
@@ -617,9 +667,8 @@ const ImageEditor: React.FC<{
 }> = ({ block, chapterRecord, pendingImage, onSetPending, onUpdate }) => {
   const [showPicker, setShowPicker] = useState(false);
 
-  // Show local URI while unsaved, fall back to saved PB filename (computed live) or legacy URL
-  const validFile = block.imageFile && block.imageFile.length > 4 ? block.imageFile : null;
-  const savedUri = validFile ? getFileUrl('chapters', chapterRecord.id, validFile) : (block.imageUrl ?? null);
+  // imageFile is a full local URI with SQLite; fall back to legacy imageUrl
+  const savedUri = block.imageFile ?? block.imageUrl ?? null;
   const displayUri = pendingImage?.uri ?? savedUri;
 
   return (
@@ -673,8 +722,8 @@ const AudioEditor: React.FC<{
 }> = ({ block, chapterRecord, pendingAudio, onSetPendingAudio, onUpdate }) => {
   const [labelText, setLabelText] = useState(block.audioLabel ?? '');
 
-  const validFile = block.audioFile && block.audioFile.length > 4 ? block.audioFile : null;
-  const savedUri = validFile ? getFileUrl('chapters', chapterRecord.id, validFile) : null;
+  // audioFile is a full local URI with SQLite
+  const savedUri = block.audioFile ?? null;
   const displayUri = pendingAudio?.uri ?? savedUri;
 
   const handlePick = async () => {
@@ -696,11 +745,6 @@ const AudioEditor: React.FC<{
       {displayUri ? (
         <>
           <AudioPlayer uri={displayUri} accentColor={Colors.warning} />
-          {pendingAudio && (
-            <View style={au.unsavedBadge}>
-              <Text style={au.unsavedText}>⚠ Unsaved — will upload on Save</Text>
-            </View>
-          )}
           <Pressable onPress={() => { onSetPendingAudio(null); onUpdate({ audioFile: undefined }); }} style={au.rmBtn}>
             <Text style={au.rmText}>Remove audio</Text>
           </Pressable>
@@ -738,10 +782,15 @@ const s = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderBottomWidth: 1, borderBottomColor: Colors.border, gap: Spacing.sm },
   backBtn: { paddingVertical: Spacing.sm },
   backText: { color: Colors.accentLight, fontSize: FontSize.md },
-  headerTitle: { flex: 1, color: Colors.textPrimary, fontSize: FontSize.md, fontWeight: '700' },
-  headerBtn: { borderRadius: Radius.md, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, minWidth: 72, alignItems: 'center' },
+  headerTitle: { color: Colors.textPrimary, fontSize: FontSize.md, fontWeight: '700', textAlign: 'center' },
+  draftBadge: { backgroundColor: Colors.warning + '22', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, marginTop: 2 },
+  draftBadgeText: { color: Colors.warning, fontSize: 10, fontWeight: '600' },
+  headerBtn: { borderRadius: Radius.md, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, minWidth: 56, alignItems: 'center' },
   saveBtn: { backgroundColor: Colors.accent },
   saveBtnText: { color: Colors.textPrimary, fontWeight: '700', fontSize: FontSize.sm },
+  draftBtnActive: { backgroundColor: Colors.warning + '33', borderWidth: 1, borderColor: Colors.warning + '88' },
+  draftBtnIdle:   { backgroundColor: Colors.surfaceAlt, borderWidth: 1, borderColor: Colors.border },
+  draftBtnText:   { fontWeight: '700', fontSize: FontSize.sm },
   editBtn: { backgroundColor: Colors.surfaceAlt, borderWidth: 1, borderColor: Colors.border },
   editBtnText: { color: Colors.textPrimary, fontWeight: '600', fontSize: FontSize.sm },
   content: { padding: Spacing.md, paddingBottom: Spacing.xxl },

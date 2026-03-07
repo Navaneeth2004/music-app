@@ -8,41 +8,31 @@ import { View } from 'react-native';
 
 SplashScreen.preventAutoHideAsync();
 
-// Protected routes — must be logged in
-const PROTECTED = ['dashboard'];
-// Auth routes — must NOT be logged in
-const AUTH_ROUTES = ['login', 'register', 'otp'];
+const AUTH_ROUTES  = ['login', 'register'];
+const PROTECTED    = ['dashboard'];
 
 function NavigationGuard() {
-  const { isLoggedIn, loading, otpId } = useAuth();
-  const router = useRouter();
+  const { isLoggedIn, loading } = useAuth();
+  const router   = useRouter();
   const segments = useSegments();
 
   useEffect(() => {
     if (loading) return;
     const current = segments[0] as string;
 
-    // OTP flow
-    if (otpId && current !== 'otp') { router.replace('/otp'); return; }
-
-    // Index screen (initial load) — route based on auth state
-    if (current === 'index' || current === undefined || current === '') {
+    if (!current || current === '' || current === 'index') {
       router.replace(isLoggedIn ? '/dashboard' : '/login');
       return;
     }
-
-    // Not logged in trying to access protected route → login
-    if (!isLoggedIn && !otpId && PROTECTED.includes(current)) {
+    if (!isLoggedIn && PROTECTED.includes(current)) {
       router.replace('/login');
       return;
     }
-
-    // Logged in on auth route → dashboard
     if (isLoggedIn && AUTH_ROUTES.includes(current)) {
       router.replace('/dashboard');
       return;
     }
-  }, [isLoggedIn, loading, otpId, segments]);
+  }, [isLoggedIn, loading, segments]);
 
   return null;
 }
@@ -60,13 +50,11 @@ function RootLayoutInner() {
           headerShown: false,
           contentStyle: { backgroundColor: Colors.background },
           animation: 'fade',
-          // Disable back gesture on auth screens so logged-out users can't swipe back to dashboard
           gestureEnabled: false,
         }}>
-          <Stack.Screen name="index" />
-          <Stack.Screen name="login" />
-          <Stack.Screen name="register" />
-          <Stack.Screen name="otp" />
+          <Stack.Screen name="index"     />
+          <Stack.Screen name="login"     />
+          <Stack.Screen name="register"  />
           <Stack.Screen name="dashboard" />
         </Stack>
       </View>

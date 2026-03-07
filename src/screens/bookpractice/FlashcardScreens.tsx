@@ -6,9 +6,8 @@ import { Book, Chapter, ChapterFlashcard as Flashcard } from '../../types';
 import { getChapterFlashcards } from '../../api/content';
 import { s, imgUrl, BACK_COLOR, ZoomableImage, Empty } from './practiceShared';
 import { AudioPlayer } from '../../components/shared/AudioPlayer';
-import { CardListHeader, SelectionBar } from '../../components/shared/Cardlistheader';
-import { CardListItem } from '../../components/shared/Cardlistitem';
-import { exportJson } from '../../utils/exportJson';
+import { CardListHeader } from '../../components/shared/CardListHeader';
+import { CardListItem } from '../../components/shared/CardListItem';
 
 // ─── Flashcards List ───────────────────────────────────────────
 export const FlashcardsScreen: React.FC<{
@@ -29,19 +28,6 @@ export const FlashcardsScreen: React.FC<{
     const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
   });
   const allSelected = selected.size === cards.length && cards.length > 0;
-
-  const handleExportSelected = async () => {
-    const chosen = cards.filter(c => selected.has(c.id));
-    if (!chosen.length) return;
-    const payload = {
-      version: 1, exportedAt: new Date().toISOString(), type: 'chapter_flashcards',
-      chapter: { title: chapter.title, number: chapter.number },
-      cards: chosen.map(c => ({ front: c.front, back: c.back })),
-    };
-    const slug = chapter.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
-    await exportJson(payload, `flashcards-${slug}.json`);
-    cancelSelect();
-  };
 
   // Right-action: Review button (exam) when not selecting; Go button when selecting
   const rightAction = !loading && cards.length > 0
@@ -74,18 +60,15 @@ export const FlashcardsScreen: React.FC<{
         rightAction={rightAction}
       />
       {selecting && (
-        <SelectionBar
-          count={selected.size} total={cards.length}
-          accentColor={book.color} allSelected={allSelected}
-          onSelectAll={() => setSelected(allSelected ? new Set() : new Set(cards.map(c => c.id)))}
-          onExport={handleExportSelected}
-        />
+        <View style={ls.selectBar}>
+          <Text style={ls.selectCount}>{selected.size} of {cards.length} selected</Text>
+          <Pressable onPress={() => setSelected(allSelected ? new Set() : new Set(cards.map(c => c.id)))} style={ls.selectAllBtn}>
+            <Text style={ls.selectAllText}>{allSelected ? 'Deselect All' : 'Select All'}</Text>
+          </Pressable>
+        </View>
       )}
 
       <ScrollView contentContainerStyle={s.listContent} showsVerticalScrollIndicator={false}>
-        {!loading && !selecting && cards.length > 0 && (
-          <View style={ls.hint}><Text style={ls.hintText}>long-press a card to select for export</Text></View>
-        )}
         {loading
           ? <ActivityIndicator style={{ marginTop: Spacing.xl }} color={book.color} />
           : cards.length === 0
@@ -118,6 +101,10 @@ const ls = StyleSheet.create({
   actionBtnText: { color: Colors.textPrimary, fontWeight: '700', fontSize: FontSize.sm },
   hint:          { paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm },
   hintText:      { fontSize: 10, color: Colors.textMuted, fontStyle: 'italic' },
+  selectBar:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border, backgroundColor: Colors.surface },
+  selectCount:   { flex: 1, fontSize: FontSize.xs, color: Colors.textSecondary, fontWeight: '600' },
+  selectAllBtn:  { backgroundColor: Colors.surfaceAlt, borderRadius: Radius.md, paddingHorizontal: Spacing.sm, paddingVertical: 4, borderWidth: 1, borderColor: Colors.border },
+  selectAllText: { color: Colors.textPrimary, fontSize: FontSize.xs, fontWeight: '600' },
 });
 
 // ─── Single Card View ──────────────────────────────────────────

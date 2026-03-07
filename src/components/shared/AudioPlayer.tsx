@@ -182,8 +182,11 @@ export const AudioPlayer: React.FC<Props> = ({ uri, accentColor = Colors.accent 
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   };
 
-  const icon = status === 'playing' ? '❚❚' : '▶';
-  const color = accentColor;
+  const icon = status === 'playing' ? '⏸' : '▶';
+  // Freeze color at mount — prevents button changing color when parent re-renders
+  // with a different accentColor (e.g. card flip switches front→back color)
+  const colorRef = useRef(accentColor);
+  const color = colorRef.current;
 
   return (
     <View style={[ap.wrap, { borderColor: color + '33', backgroundColor: color + '0A' }]}>
@@ -191,14 +194,7 @@ export const AudioPlayer: React.FC<Props> = ({ uri, accentColor = Colors.accent 
         {/* Play / pause — consistent style regardless of state */}
         <Pressable
           onPress={handlePress}
-          style={({ pressed }) => [
-            ap.btn,
-            {
-              backgroundColor: color + '22',
-              borderColor: color + '44',
-              opacity: pressed ? 0.7 : 1,
-            },
-          ]}
+          style={[ap.btn, { backgroundColor: color + '22', borderColor: color + '44' }]}
         >
           {status === 'loading'
             ? <ActivityIndicator size="small" color={color} />

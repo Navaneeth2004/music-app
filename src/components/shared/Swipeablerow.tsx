@@ -1,89 +1,92 @@
 /**
- * SwipeableRow
- * Swipe LEFT to reveal a red delete zone.
- * Tapping the red zone calls onDelete (which should show a confirm modal).
- * Uses only react-native Animated + PanResponder — no extra libraries.
+ * SwipeableRow — swipe left to trigger delete
+ *
+ * Swipe LEFT past threshold → briefly animates left → calls onDelete immediately.
+ * The parent shows a ConfirmModal. On confirm: delete + reload (row gone).
+ * On cancel: reload (row snaps back because list remounts).
+ *
+ * Right swipe, tap, and long-press are completely ignored.
  */
-import React, { useRef } from 'react';
-import {
-  View, Text, Pressable, Animated, PanResponder,
-  StyleSheet, Dimensions,
-} from 'react-native';
-import { Colors, Radius } from '../../constants/theme';
+import React, { useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
+import { Animated, PanResponder, View, Dimensions } from 'react-native';
 
-const SCREEN_W   = Dimensions.get('window').width;
-const DELETE_W   = 72;   // width of the revealed delete zone
-const THRESHOLD  = 48;   // how far to drag before it snaps open
+const SCREEN_W  = Dimensions.get('window').width;
+const THRESHOLD = SCREEN_W * 0.30;
+
+export interface SwipeableRowHandle { reset: () => void; }
 
 interface Props {
-  onDelete: () => void;
-  children: React.ReactNode;
-  /** Extra style on the outer container */
+  onDelete:       () => void;
+  children:       React.ReactNode;
   containerStyle?: any;
 }
 
-export const SwipeableRow: React.FC<Props> = ({ onDelete, children, containerStyle }) => {
-  const translateX = useRef(new Animated.Value(0)).current;
-  const isOpen     = useRef(false);
+export const SwipeableRow = forwardRef<SwipeableRowHandle, Props>(
+  ({ onDelete, children, containerStyle }, ref) => {
+    const tx        = useRef(new Animated.Value(0)).current;
+    const triggered = useRef(false);
 
-  const clamp = (val: number) => Math.min(0, Math.max(-DELETE_W, val));
+    const reset = useCallback(() => {
+      triggered.current = false;
+      Animated.spring(tx, { toValue: 0, useNativeDriver: true, tension: 180, friction: 20 }).start();
+    }, [tx]);
 
-  const snapOpen  = () => { Animated.spring(translateX, { toValue: -DELETE_W, useNativeDriver: true, tension: 120, friction: 12 }).start(() => { isOpen.current = true; }); };
-  const snapClose = () => { Animated.spring(translateX, { toValue: 0,         useNativeDriver: true, tension: 120, friction: 12 }).start(() => { isOpen.current = false; }); };
+    useImperativeHandle(ref, () => ({ reset }), [reset]);
 
-  const panResponder = useRef(PanResponder.create({
-    onStartShouldSetPanResponder: () => false,
-    onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 6 && Math.abs(g.dx) > Math.abs(g.dy),
-    onPanResponderGrant: () => {
-      // offset so we continue from current position
-      translateX.stopAnimation();
-      translateX.setOffset(isOpen.current ? -DELETE_W : 0);
-      translateX.setValue(0);
-    },
-    onPanResponderMove: (_, g) => {
-      const offset = isOpen.current ? -DELETE_W : 0;
-      const clamped = clamp(offset + g.dx);
-      translateX.setValue(clamped - offset);
-    },
-    onPanResponderRelease: (_, g) => {
-      translateX.flattenOffset();
-      const currentX = isOpen.current ? -DELETE_W + g.dx : g.dx;
-      if (currentX < -THRESHOLD) { snapOpen(); }
-      else { snapClose(); }
-    },
-    onPanResponderTerminate: () => { translateX.flattenOffset(); snapClose(); },
-  })).current;
+    const snapBack = useCallback(() => {
+      Animated.spring(tx, { toValue: 0, useNativeDriver: true, tension: 200, friction: 22 }).start();
+    }, [tx]);
 
-  const handleDelete = () => {
-    snapClose();
-    onDelete();
-  };
+    const trigger = useCallback(() => {
+      if (triggered.current) return;
+      triggered.current = true;
+      // Small leftward nudge to give visual feedback, then snap back
+      // The row will disappear only when parent calls load() after confirm
+      Animated.sequence([
+        Animated.timing(tx, { toValue: -80, duration: 150, useNativeDriver: true }),
+        Animated.spring(tx, { toValue: 0, useNativeDriver: true, tension: 200, friction: 20 }),
+      ]).start(() => { triggered.current = false; });
+      onDelete(); // fire immediately so modal appears right away
+    }, [tx, onDelete]);
 
-  return (
-    <View style={[sw.outer, containerStyle]}>
-      {/* Delete zone (behind) */}
-      <View style={sw.deleteZone}>
-        <Pressable onPress={handleDelete} style={sw.deleteBtn}>
-          <Text style={sw.deleteIcon}>🗑</Text>
-          <Text style={sw.deleteLabel}>Delete</Text>
-        </Pressable>
+    const panResponder = useRef(
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, g) =>
+          !triggered.current &&
+          g.dx < -10 &&
+          Math.abs(g.dx) > Math.abs(g.dy) * 2,
+
+        onPanResponderGrant: () => {
+          tx.stopAnimation();
+          tx.extractOffset();
+        },
+
+        onPanResponderMove: (_, g) => {
+          tx.setValue(Math.min(0, g.dx));
+        },
+
+        onPanResponderRelease: (_, g) => {
+          tx.flattenOffset();
+          if (g.dx < -THRESHOLD || g.vx < -0.9) {
+            trigger();
+          } else {
+            snapBack();
+          }
+        },
+
+        onPanResponderTerminate: () => {
+          tx.flattenOffset();
+          snapBack();
+        },
+      })
+    ).current;
+
+    return (
+      <View style={containerStyle}>
+        <Animated.View style={{ transform: [{ translateX: tx }] }} {...panResponder.panHandlers}>
+          {children}
+        </Animated.View>
       </View>
-      {/* Row content (on top, slides left) */}
-      <Animated.View
-        style={{ transform: [{ translateX }] }}
-        {...panResponder.panHandlers}
-      >
-        {children}
-      </Animated.View>
-    </View>
-  );
-};
-
-const sw = StyleSheet.create({
-  outer:      { overflow: 'hidden' },
-  deleteZone: { position: 'absolute', right: 0, top: 0, bottom: 0, width: DELETE_W,
-                backgroundColor: Colors.error, alignItems: 'center', justifyContent: 'center' },
-  deleteBtn:  { alignItems: 'center', justifyContent: 'center', flex: 1, width: '100%' },
-  deleteIcon: { fontSize: 18 },
-  deleteLabel:{ color: '#fff', fontSize: 10, fontWeight: '700', marginTop: 2 },
-});
+    );
+  }
+);
