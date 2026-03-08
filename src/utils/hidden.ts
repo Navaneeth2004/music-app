@@ -1,20 +1,6 @@
-/**
- * hidden.ts
- * Lightweight AsyncStorage layer for hiding books, chapters, and solo decks
- * from the student view. Only admins can hide/show items.
- *
- * Hidden state is per-device (AsyncStorage), not per-user.
- * Keys are prefixed by type so different content types never collide.
- *
- * Usage:
- *   const hidden = await getHidden('book');
- *   await toggleHidden('chapter', chapter.id);
- *   const yes = await isHidden('deck', deck.id);
- */
-
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export type HideType = 'book' | 'chapter' | 'deck';
+export type HideType = 'book' | 'chapter' | 'deck' | 'flashcard';
 
 const key = (type: HideType) => `hidden_${type}`;
 

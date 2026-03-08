@@ -1,14 +1,3 @@
-/**
- * CardListItem
- * Single row in a flashcard list. Used by:
- *   - FlashcardBuilderScreen (admin chapter cards)
- *   - SoloDeckBuilderScreen  (admin solo cards)
- *   - FlashcardScreens       (user chapter cards)
- *   - SoloDeckStudyScreen    (user solo cards)
- *
- * Handles normal tap, long-press to enter select mode, and checkbox while selecting.
- * Swipe-to-delete is handled by the parent wrapping this in <SwipeableRow>.
- */
 import React from 'react';
 import { View, Text, Image, Pressable, StyleSheet } from 'react-native';
 import { Colors, FontSize, Spacing, Radius } from '../../constants/theme';
@@ -23,6 +12,8 @@ interface Props {
   // selection
   selecting:   boolean;
   selected:    boolean;
+  // hide
+  isHidden?:   boolean;
   // callbacks
   onPress:     () => void;
   onLongPress: () => void;
@@ -30,7 +21,7 @@ interface Props {
 
 export const CardListItem: React.FC<Props> = ({
   index, front, back, thumbUri, hasAudio,
-  accentColor, selecting, selected,
+  accentColor, selecting, selected, isHidden,
   onPress, onLongPress,
 }) => (
   <Pressable
@@ -40,6 +31,7 @@ export const CardListItem: React.FC<Props> = ({
     style={({ pressed }) => [
       ci.row,
       pressed && { opacity: 0.65 },
+      !selecting && isHidden && { opacity: 0.45 },
       selecting && selected && { backgroundColor: accentColor + '14' },
     ]}
   >
@@ -59,7 +51,10 @@ export const CardListItem: React.FC<Props> = ({
 
     {/* Text */}
     <View style={ci.body}>
-      <Text style={ci.front} numberOfLines={1}>{front || '(image only)'}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+        <Text style={[ci.front, { flex: 1 }]} numberOfLines={1}>{front || '(image only)'}</Text>
+        {!selecting && isHidden && <Text style={{ fontSize: 10 }}>🙈</Text>}
+      </View>
       {back ? <Text style={ci.back} numberOfLines={1}>{back}</Text> : null}
     </View>
 

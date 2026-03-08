@@ -13,6 +13,7 @@ import { restoreMediaMap, remapUri } from '../../../utils/mediaExport';
 import { ExportNameModal, ExportPrompt } from '../../../components/shared/Exportnamemodal';
 import { InfoModal, InfoModalData }      from '../../../components/shared/Infomodal';
 import { ImportModal }                   from '../../../components/shared/ImportModal';
+import { getHidden, toggleHidden } from '../../../utils/hidden';
 
 const COLORS = ['#7C6FF7','#4CAF88','#E05C6A','#F0A050','#4A9EE0','#C47ED4'];
 const ICONS  = ['🎼','🎹','🎸','🎺','🎻','🥁','🎵','🎶'];
@@ -37,10 +38,11 @@ export const BookBuilderScreen: React.FC<Props> = ({ onChapters, onBack }) => {
   const [showImport, setShowImport]     = useState(false);
   const [exportPrompt, setExportPrompt] = useState<ExportPrompt | null>(null);
   const [infoModal, setInfoModal]       = useState<InfoModalData | null>(null);
+  const [hidden, setHidden]             = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { setBooks(await getBooks()); } catch { setError('Failed to load.'); } finally { setLoading(false); }
+    try { const [b, h] = await Promise.all([getBooks(), getHidden('book')]); setBooks(b); setHidden(h); } catch { setError('Failed to load.'); } finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -90,6 +92,11 @@ export const BookBuilderScreen: React.FC<Props> = ({ onChapters, onBack }) => {
     const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
   });
   const allSelected = selected.size === books.length && books.length > 0;
+
+  const handleToggleHide = async (id: string) => {
+    await toggleHidden('book', id);
+    setHidden(await getHidden('book'));
+  };
 
   const handleCreate = async () => {
     if (!title.trim() || !author.trim()) return;
@@ -177,7 +184,7 @@ export const BookBuilderScreen: React.FC<Props> = ({ onChapters, onBack }) => {
         {error && <View style={s.err}><Text style={s.errText}>{error}</Text></View>}
 
         {!loading && !selecting && (
-          <Text style={s.hint}>long-press to select for export · swipe left to delete</Text>
+          <Text style={s.hint}>long-press to export  ·  swipe → hide  ·  swipe ← delete</Text>
         )}
 
         {selecting && (
@@ -191,13 +198,14 @@ export const BookBuilderScreen: React.FC<Props> = ({ onChapters, onBack }) => {
 
         {loading ? <ActivityIndicator color={Colors.accent} style={{ marginTop: Spacing.xl }} /> : <>
           {books.map(book => (
-            <SwipeableRow key={book.id} onDelete={() => setDeleteTarget(book)} containerStyle={{ marginBottom: Spacing.sm, borderRadius: Radius.md }}>
+            <SwipeableRow key={book.id} onDelete={() => setDeleteTarget(book)} onHide={() => handleToggleHide(book.id)} isHidden={hidden.has(book.id)} containerStyle={{ marginBottom: Spacing.sm, borderRadius: Radius.md }}>
               <Pressable
                 onPress={() => selecting ? toggleSelect(book.id) : onChapters(book)}
                 onLongPress={() => { if (!selecting) { setSelecting(true); setSelected(new Set([book.id])); } }}
                 delayLongPress={350}
                 style={({ pressed }) => [
                   s.bookCard, pressed && { opacity: 0.75 },
+                  !selecting && hidden.has(book.id) && { opacity: 0.45 },
                   selecting && selected.has(book.id) && { borderColor: book.color, backgroundColor: book.color + '12' },
                 ]}
               >
@@ -211,7 +219,10 @@ export const BookBuilderScreen: React.FC<Props> = ({ onChapters, onBack }) => {
                   </View>
                 )}
                 <View style={s.meta}>
-                  <Text style={s.bookTitle}>{book.title}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={s.bookTitle}>{book.title}</Text>
+                    {!selecting && hidden.has(book.id) && <Text style={{ fontSize: 11 }}>🙈</Text>}
+                  </View>
                   <Text style={s.bookAuthor}>{book.author}</Text>
                 </View>
                 {!selecting && <Text style={s.chevron}>›</Text>}
@@ -271,7 +282,7 @@ const s = StyleSheet.create({
   back:     { marginBottom: Spacing.lg },
   backText: { color: Colors.accentLight, fontSize: FontSize.md, fontWeight: '500' },
   title:    { fontSize: FontSize.xxl, fontWeight: '800', color: Colors.textPrimary, letterSpacing: -0.5, marginBottom: Spacing.sm },
-  hint:     { fontSize: 10, color: Colors.textMuted, fontStyle: 'italic', marginBottom: Spacing.md },
+  hint:     { fontSize: 10, color: Colors.textMuted, fontStyle: 'italic', marginBottom: Spacing.sm },
   err:      { backgroundColor: Colors.error + '22', borderRadius: Radius.md, padding: Spacing.md, marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.error },
   errText:  { color: Colors.error, fontSize: FontSize.sm },
 
@@ -287,7 +298,7 @@ const s = StyleSheet.create({
   bookAuthor: { fontSize: FontSize.sm, color: Colors.textSecondary },
   chevron:  { color: Colors.textMuted, fontSize: 22 },
 
-  addRow:     { marginTop: Spacing.sm, gap: Spacing.xs },
+  addRow:     { marginTop: Spacing.md, gap: Spacing.sm },
   addBtn:     { borderWidth: 1.5, borderColor: Colors.accent + '66', borderStyle: 'dashed', borderRadius: Radius.md, paddingVertical: Spacing.md, alignItems: 'center' },
   addBtnText: { color: Colors.accent, fontSize: FontSize.md, fontWeight: '600' },
   importBtn:  { borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.md, paddingVertical: Spacing.sm, alignItems: 'center' },

@@ -13,6 +13,7 @@ import { CardListHeader, SelectionBar } from '../../../components/shared/CardLis
 import { AudioPlayer }           from '../../../components/shared/AudioPlayer';
 import { FlashcardFormScreen }   from './FlashcardFormScreen';
 import { exportJson }            from '../../../utils/exportJson';
+import { getHidden, toggleHidden } from '../../../utils/hidden';
 import { embedMedia }            from '../../../utils/mediaExport';
 import { ExportNameModal, ExportPrompt } from '../../../components/shared/Exportnamemodal';
 
@@ -35,13 +36,19 @@ export const FlashcardBuilderScreen: React.FC<Props> = ({ chapter, book, onBack 
   const [selecting, setSelecting]       = useState(false);
   const [selected, setSelected]         = useState<Set<string>>(new Set());
   const [exportPrompt, setExportPrompt] = useState<ExportPrompt | null>(null);
+  const [hidden, setHidden]             = useState<Set<string>>(new Set());
   const load = useCallback(async () => {
     setLoading(true);
-    try { setCards(await getFlashcards(chapter.id)); }
+    try { const [cards, h] = await Promise.all([getFlashcards(chapter.id), getHidden('flashcard')]); setCards(cards); setHidden(h); }
     catch { setError('Failed to load.'); }
     finally { setLoading(false); }
   }, [chapter.id]);
   useEffect(() => { load(); }, [load]);
+
+  const handleToggleHide = async (id: string) => {
+    await toggleHidden('flashcard', id);
+    setHidden(await getHidden('flashcard'));
+  };
 
   const cancelSelect = () => { setSelecting(false); setSelected(new Set()); };
   const toggleSelect = (id: string) => setSelected(prev => {
@@ -164,7 +171,7 @@ export const FlashcardBuilderScreen: React.FC<Props> = ({ chapter, book, onBack 
         {!loading && !selecting && (
           <View style={s.countRow}>
             <Text style={s.countText}>{cards.length} flashcard{cards.length !== 1 ? 's' : ''}</Text>
-            <Text style={s.hintText}>long-press to select · swipe left to delete</Text>
+            <Text style={s.hintText}>long-press to export  ·  swipe → hide  ·  swipe ← delete</Text>
           </View>
         )}
         {loading
@@ -173,12 +180,13 @@ export const FlashcardBuilderScreen: React.FC<Props> = ({ chapter, book, onBack 
               const fUrl     = getUrl(card, 'front_image');
               const hasAudio = !!(card as any).front_audio || !!(card as any).back_audio;
               return (
-                <SwipeableRow key={card.id} onDelete={() => setDeleteTarget(card)}>
+                <SwipeableRow key={card.id} onDelete={() => setDeleteTarget(card)} onHide={() => handleToggleHide(card.id)} isHidden={hidden.has(card.id)}>
                   <CardListItem
                     index={i} front={card.front} back={card.back}
                     thumbUri={fUrl} hasAudio={hasAudio}
                     accentColor={book.color}
                     selecting={selecting} selected={selected.has(card.id)}
+                    isHidden={hidden.has(card.id)}
                     onPress={() => {
                       if (selecting) { toggleSelect(card.id); }
                       else { setPreviewCard(card); setFlipped(false); setView('preview'); }
@@ -222,9 +230,9 @@ const s = StyleSheet.create({
   listContent: { paddingBottom: Spacing.xxl },
   chPill:     { borderRadius: Radius.full, paddingHorizontal: 7, paddingVertical: 2 },
   chPillText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
-  countRow:  { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm },
-  countText: { fontSize: FontSize.xs, color: Colors.textMuted, letterSpacing: 1, fontWeight: '600', textTransform: 'uppercase', flex: 1 },
-  hintText:  { fontSize: 10, color: Colors.textMuted, fontStyle: 'italic' },
+  countRow:  { paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm, paddingBottom: Spacing.xs },
+  countText: { fontSize: FontSize.xs, color: Colors.textMuted, letterSpacing: 1, fontWeight: '600', textTransform: 'uppercase' },
+  hintText:  { fontSize: 10, color: Colors.textMuted, fontStyle: 'italic', marginTop: 2 },
   err:     { backgroundColor: Colors.error + '22', borderRadius: Radius.md, padding: Spacing.md, margin: Spacing.lg, borderWidth: 1, borderColor: Colors.error },
   errText: { color: Colors.error, fontSize: FontSize.sm },
   actions:    { marginHorizontal: Spacing.lg, marginTop: Spacing.lg, gap: Spacing.sm },

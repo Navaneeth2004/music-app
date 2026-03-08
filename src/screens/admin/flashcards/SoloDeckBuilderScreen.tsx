@@ -16,6 +16,7 @@ import { exportJson }            from '../../../utils/exportJson';
 import { embedMedia }            from '../../../utils/mediaExport';
 import { ExportNameModal, ExportPrompt } from '../../../components/shared/Exportnamemodal';
 import { SoloFlashcardFormScreen } from './SoloFlashcardFormScreen';
+import { getHidden, toggleHidden } from '../../../utils/hidden';
 
 const BACK_COLOR = '#38BFA1';
 const COLORS = ['#7C6FF7','#4CAF88','#E05C6A','#F0A050','#4A9EE0','#C47ED4','#56CCB2','#E8845A'];
@@ -38,14 +39,20 @@ export const SoloDeckBuilderScreen: React.FC<Props> = ({ onBack }) => {
   const [deleteTarget, setDeleteTarget] = useState<SoloDeck | null>(null);
   const [selectedDeck, setSelectedDeck] = useState<SoloDeck | null>(null);
   const [error, setError]               = useState<string | null>(null);
+  const [hidden, setHidden]             = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { setDecks(await getSoloDecks()); }
+    try { const [d, h] = await Promise.all([getSoloDecks(), getHidden('deck')]); setDecks(d); setHidden(h); }
     catch { setError('Failed to load.'); }
     finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  const handleToggleHide = async (id: string) => {
+    await toggleHidden('deck', id);
+    setHidden(await getHidden('deck'));
+  };
 
   const handleCreate = async () => {
     if (!title.trim()) return;
@@ -79,15 +86,20 @@ export const SoloDeckBuilderScreen: React.FC<Props> = ({ onBack }) => {
         {error && <View style={s.err}><Text style={s.errText}>{error}</Text></View>}
 
         {loading ? <ActivityIndicator color={Colors.accent} style={{ marginTop: Spacing.xl }} /> : <>
-          <Text style={s.hint}>swipe left on a deck to delete it</Text>
+          <Text style={s.hint}>long-press to export  ·  swipe → hide  ·  swipe ← delete</Text>
           {decks.map(deck => (
-            <SwipeableRow key={deck.id} onDelete={() => setDeleteTarget(deck)} containerStyle={{ marginBottom: Spacing.sm, borderRadius: Radius.md }}>
+            <SwipeableRow key={deck.id} onDelete={() => setDeleteTarget(deck)} onHide={() => handleToggleHide(deck.id)} isHidden={hidden.has(deck.id)} containerStyle={{ marginBottom: Spacing.sm, borderRadius: Radius.md }}>
               <Pressable onPress={() => { setSelectedDeck(deck); setView('cards'); }}
-                style={({ pressed }) => [s.deckCard, pressed && { opacity: 0.75 }]}>
+                style={({ pressed }) => [s.deckCard, pressed && { opacity: 0.75 }, hidden.has(deck.id) && { opacity: 0.45 }]}>
                 <View style={[s.cover, { backgroundColor: deck.color + '33' }]}>
                   <Text style={{ fontSize: 22 }}>{deck.icon}</Text>
                 </View>
-                <View style={s.meta}><Text style={s.deckTitle}>{deck.title}</Text></View>
+                <View style={s.meta}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={s.deckTitle}>{deck.title}</Text>
+                    {hidden.has(deck.id) && <Text style={{ fontSize: 11 }}>🙈</Text>}
+                  </View>
+                </View>
                 <Text style={s.chevron}>›</Text>
               </Pressable>
             </SwipeableRow>
@@ -134,6 +146,7 @@ export const SoloDeckBuilderScreen: React.FC<Props> = ({ onBack }) => {
 // ─── Cards Screen ──────────────────────────────────────────────
 const SoloDeckCardsScreen: React.FC<{ deck: SoloDeck; onBack: () => void }> = ({ deck, onBack }) => {
   const [cards, setCards]               = useState<SoloFlashcard[]>([]);
+  const [hiddenCards, setHiddenCards]   = useState<Set<string>>(new Set());
   const [loading, setLoading]           = useState(true);
   const [cardView, setCardView]         = useState<CardView>('list');
   const [previewCard, setPreviewCard]   = useState<SoloFlashcard | null>(null);
@@ -147,9 +160,17 @@ const SoloDeckCardsScreen: React.FC<{ deck: SoloDeck; onBack: () => void }> = ({
   const [exportPrompt, setExportPrompt] = useState<ExportPrompt | null>(null);
 
   const load = useCallback(async () => {
-    setLoading(true); getSoloFlashcards(deck.id).then(setCards).finally(() => setLoading(false));
+    setLoading(true);
+    Promise.all([getSoloFlashcards(deck.id), getHidden('flashcard')])
+      .then(([c, h]) => { setCards(c); setHiddenCards(h); })
+      .finally(() => setLoading(false));
   }, [deck.id]);
   useEffect(() => { load(); }, [load]);
+
+  const handleToggleHideCard = async (id: string) => {
+    await toggleHidden('flashcard', id);
+    setHiddenCards(await getHidden('flashcard'));
+  };
 
   const cancelSelect = () => { setSelecting(false); setSelected(new Set()); };
   const toggleSelect = (id: string) => setSelected(prev => {
@@ -263,7 +284,7 @@ const SoloDeckCardsScreen: React.FC<{ deck: SoloDeck; onBack: () => void }> = ({
         {!loading && !selecting && (
           <View style={s.countRow}>
             <Text style={s.countText}>{cards.length} card{cards.length !== 1 ? 's' : ''}</Text>
-            <Text style={s.hintText}>long-press to select · swipe left to delete</Text>
+            <Text style={s.hintText}>long-press to export  ·  swipe → hide  ·  swipe ← delete</Text>
           </View>
         )}
         {loading ? <ActivityIndicator color={deck.color} style={{ marginTop: Spacing.xl }} /> :
@@ -271,12 +292,13 @@ const SoloDeckCardsScreen: React.FC<{ deck: SoloDeck; onBack: () => void }> = ({
             const fUrl     = getUrl(card, 'front_image');
             const hasAudio = !!(card as any).front_audio || !!(card as any).back_audio;
             return (
-              <SwipeableRow key={card.id} onDelete={() => setDeleteTarget(card)}>
+              <SwipeableRow key={card.id} onDelete={() => setDeleteTarget(card)} onHide={() => handleToggleHideCard(card.id)} isHidden={hiddenCards.has(card.id)}>
                 <CardListItem
                   index={i} front={card.front} back={card.back}
                   thumbUri={fUrl} hasAudio={hasAudio}
                   accentColor={deck.color}
                   selecting={selecting} selected={selected.has(card.id)}
+                  isHidden={hiddenCards.has(card.id)}
                   onPress={() => {
                     if (selecting) { toggleSelect(card.id); }
                     else { setPreviewCard(card); setFlipped(false); setCardView('preview'); }
@@ -319,7 +341,7 @@ const s = StyleSheet.create({
   backText:    { color: Colors.accentLight, fontSize: FontSize.md, fontWeight: '500' },
   title:       { fontSize: FontSize.xxl, fontWeight: '800', color: Colors.textPrimary, letterSpacing: -0.5, marginBottom: Spacing.xs },
   subtitle:    { fontSize: FontSize.sm, color: Colors.textSecondary, marginBottom: Spacing.sm },
-  hint:        { fontSize: 10, color: Colors.textMuted, fontStyle: 'italic', marginBottom: Spacing.md },
+  hint:        { fontSize: 10, color: Colors.textMuted, fontStyle: 'italic', marginBottom: Spacing.sm },
   err:         { backgroundColor: Colors.error + '22', borderRadius: Radius.md, padding: Spacing.md, marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.error },
   errText:     { color: Colors.error, fontSize: FontSize.sm },
 
@@ -346,9 +368,9 @@ const s = StyleSheet.create({
   saveBtn:    { flex: 1, padding: Spacing.md, borderRadius: Radius.md, backgroundColor: Colors.accent, alignItems: 'center' },
   saveBtnText:{ color: Colors.textPrimary, fontWeight: '700' },
 
-  countRow:  { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm },
-  countText: { fontSize: FontSize.xs, color: Colors.textMuted, letterSpacing: 1, fontWeight: '600', textTransform: 'uppercase', flex: 1 },
-  hintText:  { fontSize: 10, color: Colors.textMuted, fontStyle: 'italic' },
+  countRow:  { paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm, paddingBottom: Spacing.xs },
+  countText: { fontSize: FontSize.xs, color: Colors.textMuted, letterSpacing: 1, fontWeight: '600', textTransform: 'uppercase' },
+  hintText:  { fontSize: 10, color: Colors.textMuted, fontStyle: 'italic', marginTop: 2 },
   actions:    { marginHorizontal: Spacing.lg, marginTop: Spacing.lg, gap: Spacing.sm },
   addBtn:     { borderWidth: 1.5, borderColor: Colors.success + '66', borderStyle: 'dashed', borderRadius: Radius.md, paddingVertical: Spacing.md, alignItems: 'center' },
   addBtnText: { color: Colors.success, fontSize: FontSize.md, fontWeight: '600' },

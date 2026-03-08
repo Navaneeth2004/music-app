@@ -14,6 +14,7 @@ import { restoreMediaMap, remapUri } from '../../../utils/mediaExport';
 import { ExportNameModal, ExportPrompt } from '../../../components/shared/Exportnamemodal';
 import { InfoModal, InfoModalData }      from '../../../components/shared/Infomodal';
 import { ImportModal }                   from '../../../components/shared/ImportModal';
+import { getHidden, toggleHidden } from '../../../utils/hidden';
 
 
 interface Props { book: Book; onBack: () => void; }
@@ -34,10 +35,11 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
   const [exportPrompt, setExportPrompt] = useState<ExportPrompt | null>(null);
   const [infoModal, setInfoModal]       = useState<InfoModalData | null>(null);
   const [showImport, setShowImport]     = useState(false);
+  const [hidden, setHidden]             = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { setChapters(await getChapters(book.id)); }
+    try { const [ch, h] = await Promise.all([getChapters(book.id), getHidden('chapter')]); setChapters(ch); setHidden(h); }
     catch { setError('Failed to load.'); }
     finally { setLoading(false); }
   }, [book.id]);
@@ -85,6 +87,11 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
     const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
   });
   const allSelected = selected.size === chapters.length && chapters.length > 0;
+
+  const handleToggleHide = async (id: string) => {
+    await toggleHidden('chapter', id);
+    setHidden(await getHidden('chapter'));
+  };
 
   const handleCreate = async () => {
     if (!title.trim()) return;
@@ -164,7 +171,7 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
         {error && <View style={s.err}><Text style={s.errText}>{error}</Text></View>}
 
         {!loading && !selecting && (
-          <Text style={s.hint}>long-press a chapter to select for export · swipe left to delete</Text>
+          <Text style={s.hint}>long-press to export  ·  swipe → hide  ·  swipe ← delete</Text>
         )}
 
         {selecting && (
@@ -180,7 +187,7 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
           ? <ActivityIndicator color={Colors.accent} style={{ marginTop: Spacing.xl }} />
           : <>
               {chapters.map(ch => (
-                <SwipeableRow key={ch.id} onDelete={() => setDeleteTarget(ch)} containerStyle={{ marginBottom: Spacing.sm, borderRadius: Radius.md }}>
+                <SwipeableRow key={ch.id} onDelete={() => setDeleteTarget(ch)} onHide={() => handleToggleHide(ch.id)} isHidden={hidden.has(ch.id)} containerStyle={{ marginBottom: Spacing.sm, borderRadius: Radius.md }}>
                   <Pressable
                     onPress={() => selecting ? toggleSelect(ch.id) : setEditing(ch)}
                     onLongPress={() => { if (!selecting) { setSelecting(true); setSelected(new Set([ch.id])); } }}
@@ -188,6 +195,7 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
                     style={({ pressed }) => [
                       s.chCard,
                       pressed && { opacity: 0.75 },
+                      !selecting && hidden.has(ch.id) && { opacity: 0.45 },
                       selecting && selected.has(ch.id) && { borderColor: book.color, backgroundColor: book.color + '12' },
                     ]}
                   >
@@ -201,7 +209,10 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
                       </View>
                     )}
                     <View style={s.meta}>
-                      <Text style={s.chTitle}>{ch.title}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={s.chTitle}>{ch.title}</Text>
+                        {!selecting && hidden.has(ch.id) && <Text style={{ fontSize: 11 }}>🙈</Text>}
+                      </View>
                       {ch.subtitle ? <Text style={s.chSub}>{ch.subtitle}</Text> : null}
                     </View>
                     {!selecting && <Text style={s.chevron}>›</Text>}
@@ -284,7 +295,7 @@ const s = StyleSheet.create({
   chSub:    { fontSize: FontSize.xs, color: Colors.textMuted, marginTop: 2 },
   chevron:  { color: Colors.textMuted, fontSize: 20 },
 
-  addRow:     { marginTop: Spacing.sm, gap: Spacing.xs },
+  addRow:     { marginTop: Spacing.md, gap: Spacing.sm },
   addBtn:     { borderWidth: 1.5, borderColor: Colors.accent + '66', borderStyle: 'dashed', borderRadius: Radius.md, paddingVertical: Spacing.md, alignItems: 'center' },
   addBtnText: { color: Colors.accent, fontSize: FontSize.md, fontWeight: '600' },
   importBtn:  { borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.md, paddingVertical: Spacing.sm, alignItems: 'center' },
