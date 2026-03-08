@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, FontSize, Spacing, Radius } from '../../../constants/theme';
 import { Book, Chapter } from '../../../types';
-import { getChapters, createChapter, updateChapter, deleteChapter, getChapterFlashcards, createChapterFlashcard } from '../../../api/content';
+import { ContentBlock } from '../../../types/blocks';
+import { getChapters, getChapter, createChapter, updateChapter, deleteChapter, getChapterFlashcards, createChapterFlashcard } from '../../../api/content';
 import { BlockEditorScreen }  from './BlockEditorScreen';
 import { ConfirmModal }       from '../../../components/shared/ConfirmModal';
 import { SwipeableRow }       from '../../../components/shared/SwipeableRow';
@@ -15,6 +16,7 @@ import { ExportNameModal, ExportPrompt } from '../../../components/shared/Export
 import { InfoModal, InfoModalData }      from '../../../components/shared/Infomodal';
 import { ImportModal }                   from '../../../components/shared/ImportModal';
 import { getHidden, toggleHidden } from '../../../utils/hidden';
+import { ImageLightbox } from '../../../components/shared/ImageLightbox';
 
 
 interface Props { book: Book; onBack: () => void; }
@@ -26,7 +28,8 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
   const [showForm, setShowForm]         = useState(false);
   const [title, setTitle]               = useState('');
   const [subtitle, setSubtitle]         = useState('');
-  const [editing, setEditing]           = useState<Chapter | null>(null);
+  type BuilderView = { screen: 'list' } | { screen: 'preview'; chapter: Chapter } | { screen: 'editor'; chapter: Chapter };
+  const [view, setView] = useState<BuilderView>({ screen: 'list' });
   const [deleteTarget, setDeleteTarget] = useState<Chapter | null>(null);
   const [error, setError]               = useState<string | null>(null);
   // selection (for export)
@@ -149,7 +152,21 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
     } catch { setInfoModal({ title: 'Export failed', message: 'Could not export chapters.' }); }
   };
 
-  if (editing) return <BlockEditorScreen chapter={editing} book={book} onBack={() => { setEditing(null); load(); }} />;
+  if (view.screen === 'editor') return (
+    <BlockEditorScreen chapter={view.chapter} book={book} onBack={async () => {
+      const fresh = await getChapter(view.chapter.id).catch(() => view.chapter);
+      await load();
+      setView({ screen: 'preview', chapter: fresh });
+    }} />
+  );
+
+  if (view.screen === 'preview') return (
+    <ChapterPreviewScreen
+      chapter={view.chapter} book={book}
+      onEdit={() => setView({ screen: 'editor', chapter: view.chapter })}
+      onBack={() => setView({ screen: 'list' })}
+    />
+  );
 
   return (
     <SafeAreaView style={s.safe}>
@@ -171,7 +188,7 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
         {error && <View style={s.err}><Text style={s.errText}>{error}</Text></View>}
 
         {!loading && !selecting && (
-          <Text style={s.hint}>long-press to export  ·  swipe → hide  ·  swipe ← delete</Text>
+          <Text style={s.hint}>long-press to export · swipe ← delete · swipe → hide</Text>
         )}
 
         {selecting && (
@@ -189,7 +206,7 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
               {chapters.map(ch => (
                 <SwipeableRow key={ch.id} onDelete={() => setDeleteTarget(ch)} onHide={() => handleToggleHide(ch.id)} isHidden={hidden.has(ch.id)} containerStyle={{ marginBottom: Spacing.sm, borderRadius: Radius.md }}>
                   <Pressable
-                    onPress={() => selecting ? toggleSelect(ch.id) : setEditing(ch)}
+                    onPress={() => selecting ? toggleSelect(ch.id) : setView({ screen: 'preview', chapter: ch })}
                     onLongPress={() => { if (!selecting) { setSelecting(true); setSelected(new Set([ch.id])); } }}
                     delayLongPress={350}
                     style={({ pressed }) => [
@@ -266,6 +283,92 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
       <ImportModal visible={showImport} mode="chapter" onImport={handleImport} onCancel={() => setShowImport(false)} />
     </SafeAreaView>
   );
+};
+
+// ─── Inline chapter preview (admin side) ──────────────────────
+const ChapterPreviewScreen: React.FC<{ chapter: Chapter; book: Book; onEdit: () => void; onBack: () => void }> = ({ chapter, book, onEdit, onBack }) => {
+  const blocks: ContentBlock[] = (() => {
+    try {
+      const raw = (chapter as any).content;
+      if (!raw) return [];
+      return typeof raw === 'string' ? JSON.parse(raw) : raw;
+    } catch { return []; }
+  })();
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: Colors.background }}>
+      <ScrollView contentContainerStyle={{ padding: Spacing.lg, paddingBottom: 80 }} showsVerticalScrollIndicator={false}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.lg }}>
+          <Pressable onPress={onBack} style={{ paddingVertical: 4 }}>
+            <Text style={{ color: Colors.accent, fontSize: FontSize.md, fontWeight: '600' }}>← Chapters</Text>
+          </Pressable>
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <View style={{ backgroundColor: book.color + '22', borderRadius: Radius.full, paddingHorizontal: 10, paddingVertical: 3, borderWidth: 1, borderColor: book.color + '55' }}>
+              <Text style={{ color: book.color, fontSize: 11, fontWeight: '800', letterSpacing: 1 }}>CHAPTER {chapter.number}</Text>
+            </View>
+          </View>
+          <Pressable onPress={onEdit}
+            style={{ backgroundColor: book.color + '22', borderRadius: Radius.md, paddingVertical: 6, paddingHorizontal: Spacing.md, borderWidth: 1, borderColor: book.color + '55' }}>
+            <Text style={{ color: book.color, fontWeight: '700', fontSize: FontSize.sm }}>✏️ Edit</Text>
+          </Pressable>
+        </View>
+        <Text style={{ fontSize: FontSize.xxl, fontWeight: '800', color: Colors.textPrimary, marginBottom: Spacing.xs }}>{chapter.title}</Text>
+        {chapter.subtitle ? <Text style={{ fontSize: FontSize.md, color: Colors.textSecondary, marginBottom: Spacing.lg }}>{chapter.subtitle}</Text> : null}
+        {blocks.length === 0
+          ? <Text style={{ color: Colors.textMuted, fontStyle: 'italic', marginTop: Spacing.xl, textAlign: 'center' }}>No content blocks yet. Tap Edit to add content.</Text>
+          : blocks.map(b => <PreviewBlock key={b.id} block={b} />)}
+      </ScrollView>
+    </SafeAreaView>
+  );
+};
+
+const TappableImage: React.FC<{ uri: string }> = ({ uri }) => {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <>
+      <Pressable onPress={() => setOpen(true)} style={{ marginBottom: Spacing.md }}>
+        <Image source={{ uri }} style={{ width: '100%', height: 200, borderRadius: Radius.md }} resizeMode="contain" />
+      </Pressable>
+      <ImageLightbox uri={open ? uri : null} onClose={() => setOpen(false)} />
+    </>
+  );
+};
+
+const PreviewBlock: React.FC<{ block: ContentBlock }> = ({ block: b }) => {
+  if (b.type === 'divider') return <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: Spacing.md }} />;
+  if (b.type === 'heading') return <Text style={{ fontSize: FontSize.xl, fontWeight: '800', color: Colors.textPrimary, marginBottom: Spacing.sm }}>{b.text}</Text>;
+  if (b.type === 'subheading') return <Text style={{ fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary, marginBottom: Spacing.xs }}>{b.text}</Text>;
+  if (b.type === 'paragraph') return <Text style={{ fontSize: FontSize.md, color: Colors.textSecondary, lineHeight: 24, marginBottom: Spacing.sm }}>{b.text}</Text>;
+  if (b.type === 'bullets') return (
+    <View style={{ marginBottom: Spacing.sm }}>
+      {(b.bullets ?? []).map((pt, i) => (
+        <View key={i} style={{ flexDirection: 'row', gap: Spacing.sm, marginBottom: 4 }}>
+          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.accent, marginTop: 9 }} />
+          <Text style={{ flex: 1, fontSize: FontSize.md, color: Colors.textSecondary, lineHeight: 24 }}>{pt}</Text>
+        </View>
+      ))}
+    </View>
+  );
+  if (b.type === 'image') {
+    const uri = b.imageFile ?? b.imageUrl ?? null;
+    if (!uri) return null;
+    return <TappableImage uri={uri} />;
+  }
+  if (b.type === 'table') return (
+    <View style={{ marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.md, overflow: 'hidden' }}>
+      {b.headers && b.headers.length > 0 && (
+        <View style={{ flexDirection: 'row', backgroundColor: Colors.surfaceAlt }}>
+          {b.headers.map((h, i) => <Text key={i} style={{ flex: 1, padding: 8, fontWeight: '700', color: Colors.textPrimary, fontSize: FontSize.sm }}>{h}</Text>)}
+        </View>
+      )}
+      {(b.rows ?? []).map((row, ri) => (
+        <View key={ri} style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: Colors.border }}>
+          {row.cells.map((cell, ci) => <Text key={ci} style={{ flex: 1, padding: 8, color: Colors.textSecondary, fontSize: FontSize.sm }}>{cell}</Text>)}
+        </View>
+      ))}
+    </View>
+  );
+  return null;
 };
 
 const s = StyleSheet.create({

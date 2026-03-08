@@ -283,9 +283,16 @@ export const ChapterViewScreen: React.FC<{
   return (
     <SafeAreaView style={s.safe}>
       <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
-        <BackButton onPress={onBack} label={book.title} />
-        <View style={[s.badge, { backgroundColor: book.color + '22', borderColor: book.color + '55' }]}>
-          <Text style={[s.badgeText, { color: book.color }]}>CHAPTER {chapter.number}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.lg }}>
+          <Pressable onPress={onBack} style={{ paddingVertical: 4, minWidth: 60 }}>
+            <Text style={{ color: Colors.accentLight, fontSize: FontSize.md, fontWeight: '500' }}>← {book.title}</Text>
+          </Pressable>
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <View style={[s.badge, { backgroundColor: book.color + '22', borderColor: book.color + '55', alignSelf: 'center', marginBottom: 0 }]}>
+              <Text style={[s.badgeText, { color: book.color }]}>CHAPTER {chapter.number}</Text>
+            </View>
+          </View>
+          <View style={{ minWidth: 60 }} />
         </View>
         <Text style={s.chapterTitle}>{chapter.title}</Text>
         {chapter.subtitle ? <Text style={s.chapterSub}>{chapter.subtitle}</Text> : null}

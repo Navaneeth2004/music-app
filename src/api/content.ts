@@ -1,19 +1,3 @@
-/**
- * src/api/content.ts
- * ─────────────────────────────────────────────────────────────
- * Content API — identical function signatures to the old PocketBase
- * version.  All callers (screens, BackupScreen, export utils) are
- * completely unchanged.
- *
- * Implementation delegates to the local SQLite layer in db.ts.
- * Auth (login / register / OTP) still goes through PocketBase (pb.ts).
- *
- * File fields (front_image, back_image, front_audio, back_audio) now
- * store full local URIs returned by expo-image-picker / expo-av.
- * The getFileUrl() helper from pb.ts is no longer needed for content
- * records; it's kept in pb.ts for any legacy references.
- */
-
 import { Book, Chapter, ChapterFlashcard, SoloDeck, SoloFlashcard } from '../types';
 import {
   dbGetBooks,      dbCreateBook,      dbUpdateBook,      dbDeleteBook,

@@ -3,6 +3,7 @@
  * All content tables are scoped to user_id so each account sees only their own data.
  */
 import * as SQLite from 'expo-sqlite';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User, Book, Chapter, ChapterFlashcard, SoloDeck, SoloFlashcard } from '../types';
 
 let _db: SQLite.SQLiteDatabase | null = null;
@@ -319,12 +320,25 @@ export async function dbSearchAll(query: string): Promise<SearchResult[]> {
   const q = `%${query.trim()}%`;
   const results: SearchResult[] = [];
 
+  // Load hidden sets from AsyncStorage
+  const loadHiddenSet = async (key: string): Promise<Set<string>> => {
+    try {
+      const raw = await AsyncStorage.getItem(`hidden_${key}`);
+      return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+    } catch { return new Set(); }
+  };
+  const [hiddenBooks, hiddenChapters, hiddenDecks, hiddenFlashcards] = await Promise.all([
+    loadHiddenSet('book'), loadHiddenSet('chapter'),
+    loadHiddenSet('deck'), loadHiddenSet('flashcard'),
+  ]);
+
   // Books
   const books = await db.getAllAsync<any>(
     `SELECT * FROM books WHERE user_id=? AND (title LIKE ? OR author LIKE ?) ORDER BY title ASC LIMIT 10`,
     [_userId, q, q]
   );
   for (const b of books) {
+    if (hiddenBooks.has(b.id)) continue;
     results.push({ type: 'book', id: b.id, title: b.title, subtitle: b.author, bookColor: b.color, bookIcon: b.icon });
   }
 
@@ -336,6 +350,7 @@ export async function dbSearchAll(query: string): Promise<SearchResult[]> {
     [_userId, q, q]
   );
   for (const c of chapters) {
+    if (hiddenBooks.has(c.book) || hiddenChapters.has(c.id)) continue;
     results.push({
       type: 'chapter', id: c.id,
       title: c.title, subtitle: `Chapter ${c.number} · ${c.bookTitle}`,
@@ -354,6 +369,7 @@ export async function dbSearchAll(query: string): Promise<SearchResult[]> {
     [_userId, q, q]
   );
   for (const f of chCards) {
+    if (hiddenBooks.has(f.bId) || hiddenChapters.has(f.chapter) || hiddenFlashcards.has(f.id)) continue;
     results.push({
       type: 'chapter_flashcard', id: f.id,
       title: f.front || '(no text)', subtitle: `Card · ${f.chTitle}`,
@@ -368,6 +384,7 @@ export async function dbSearchAll(query: string): Promise<SearchResult[]> {
     [_userId, q]
   );
   for (const d of decks) {
+    if (hiddenDecks.has(d.id)) continue;
     results.push({ type: 'solo_deck', id: d.id, title: d.title, subtitle: 'Solo Deck', deckId: d.id, deckTitle: d.title, deckColor: d.color, deckIcon: d.icon });
   }
 
@@ -379,6 +396,7 @@ export async function dbSearchAll(query: string): Promise<SearchResult[]> {
     [_userId, q, q]
   );
   for (const f of soloCards) {
+    if (hiddenDecks.has(f.deck) || hiddenFlashcards.has(f.id)) continue;
     results.push({
       type: 'solo_flashcard', id: f.id,
       title: f.front || '(no text)', subtitle: `Card · ${f.deckTitle}`,

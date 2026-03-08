@@ -14,6 +14,7 @@ import { updateChapter } from '../../../api/content';
 import { ConfirmModal } from '../../../components/shared/ConfirmModal';
 import { pickAudio, PickedAudio } from '../../../utils/pickAudio';
 import { ImagePickerModal } from '../../../components/shared/ImagePickerModal';
+import { ImageLightbox } from '../../../components/shared/ImageLightbox';
 import { AudioPlayer } from '../../../components/shared/AudioPlayer';
 
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -56,12 +57,18 @@ export const RichText: React.FC<{ text: string; style?: any }> = ({ text, style 
 
 // ─── Main Editor ──────────────────────────────────────────────
 export const BlockEditorScreen: React.FC<Props> = ({ chapter, book, onBack }) => {
-  const [blocks, setBlocks] = useState<ContentBlock[]>([]);
+  const [blocks, setBlocks] = useState<ContentBlock[]>(() => {
+    try {
+      const raw = (chapter as any).content;
+      if (raw) return typeof raw === 'string' ? JSON.parse(raw) : raw;
+    } catch {}
+    return [];
+  });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [hasDraft, setHasDraft] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
-  const [isEditMode, setIsEditMode] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(true);
   const [showPicker, setShowPicker] = useState(false);
   const [insertAfter, setInsertAfter] = useState<string | null>(null);
   const [modalBlock, setModalBlock] = useState<ContentBlock | null>(null);
@@ -92,29 +99,30 @@ export const BlockEditorScreen: React.FC<Props> = ({ chapter, book, onBack }) =>
     setPendingVersion(v => v + 1);
   };
 
-  // Load: prefer draft over saved content
+  // Load draft if one exists (content already loaded synchronously above)
   useEffect(() => {
-    const load = async () => {
-      try {
-        const draftRaw = await AsyncStorage.getItem(DRAFT_KEY);
-        if (draftRaw) {
-          setBlocks(JSON.parse(draftRaw));
-          setHasDraft(true);
-          return;
-        }
-      } catch {}
-      try {
-        const raw = (chapter as any).content;
-        if (raw) setBlocks(typeof raw === 'string' ? JSON.parse(raw) : raw);
-      } catch {}
-    };
-    load();
+    AsyncStorage.getItem(DRAFT_KEY).then(raw => {
+      if (raw) { setBlocks(JSON.parse(raw)); setHasDraft(true); }
+    }).catch(() => {});
   }, []);
 
   // Draft is ONLY saved when user explicitly presses "Draft" — no auto-save
 
   const saveDraft = async (b: ContentBlock[]) => {
-    await AsyncStorage.setItem(DRAFT_KEY, JSON.stringify(b)).catch(() => {});
+    // Merge pending images/audios into the draft so they're preserved,
+    // but DON'T remove them from the pending refs (they're still unsaved to disk).
+    let draftBlocks = [...b];
+    for (const [blockId, picked] of pendingImages.current.entries()) {
+      draftBlocks = draftBlocks.map(bl =>
+        bl.id === blockId ? { ...bl, imageFile: picked.uri, imageUrl: undefined } : bl
+      );
+    }
+    for (const [blockId, picked] of pendingAudios.current.entries()) {
+      draftBlocks = draftBlocks.map(bl =>
+        bl.id === blockId ? { ...bl, audioFile: picked.uri } : bl
+      );
+    }
+    await AsyncStorage.setItem(DRAFT_KEY, JSON.stringify(draftBlocks)).catch(() => {});
     setHasDraft(true);
     setIsDirty(false);
   };
@@ -197,8 +205,8 @@ export const BlockEditorScreen: React.FC<Props> = ({ chapter, book, onBack }) =>
                 {hasDraft && !isDirty ? '✓ Drafted' : 'Draft'}
               </Text>
             </Pressable>
-            <Pressable onPress={async () => { await save(blocks); setIsEditMode(false); }}
-              style={[s.headerBtn, s.saveBtn]} disabled={saving}>
+            <Pressable onPress={async () => { await save(blocks); onBack(); }}
+              style={[s.headerBtn, s.saveBtn, !isDirty && { opacity: 0.4 }]} disabled={saving || !isDirty}>
               {saving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={s.saveBtnText}>{saved ? '✓' : 'Save'}</Text>}
             </Pressable>
           </View>
@@ -235,13 +243,7 @@ export const BlockEditorScreen: React.FC<Props> = ({ chapter, book, onBack }) =>
             const idx = getIndex() ?? 0;
             return (
               <Swipeable
-                ref={(r) => {
-                  if (r !== null) {
-                    swipeRefs.current.set(block.id, r);
-                  } else {
-                    swipeRefs.current.delete(block.id);
-                  }
-                }}
+                ref={r => { swipeRefs.current.set(block.id, r); }}
                 renderRightActions={() => <View style={{ width: 60 }} />}
                 onSwipeableWillOpen={() => setDeleteTarget(block.id)}
                 overshootRight={false}
@@ -355,6 +357,18 @@ export const BlockEditorScreen: React.FC<Props> = ({ chapter, book, onBack }) =>
 };
 
 // ─── Preview ──────────────────────────────────────────────────
+const TappablePreviewImage: React.FC<{ uri: string }> = ({ uri }) => {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <>
+      <Pressable onPress={() => setOpen(true)}>
+        <Image source={{ uri }} style={pv.image} resizeMode="contain" />
+      </Pressable>
+      <ImageLightbox uri={open ? uri : null} onClose={() => setOpen(false)} />
+    </>
+  );
+};
+
 const PreviewBlock: React.FC<{ block: ContentBlock; chapterRecord: any }> = ({ block: b, chapterRecord }) => {
   if (b.type === 'divider') return <View style={pv.divider} />;
   if (b.type === 'heading') return <RichText text={b.text ?? ''} style={pv.heading} />;
@@ -374,7 +388,7 @@ const PreviewBlock: React.FC<{ block: ContentBlock; chapterRecord: any }> = ({ b
     // imageFile stores a full local URI with SQLite (or legacy PB filename for old data)
     const imgUri = b.imageFile ?? b.imageUrl ?? null;
     if (!imgUri) return null;
-    return <Image source={{ uri: imgUri }} style={pv.image} resizeMode="contain" />;
+    return <TappablePreviewImage uri={imgUri} />;
   }
   if (b.type === 'audio') {
     // audioFile stores a full local URI with SQLite
