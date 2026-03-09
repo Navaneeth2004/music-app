@@ -320,7 +320,7 @@ export async function dbSearchAll(query: string): Promise<SearchResult[]> {
   const q = `%${query.trim()}%`;
   const results: SearchResult[] = [];
 
-  // Load hidden sets from AsyncStorage
+  // Load hidden sets from AsyncStorage (these are admin-side hide flags)
   const loadHiddenSet = async (key: string): Promise<Set<string>> => {
     try {
       const raw = await AsyncStorage.getItem(`hidden_${key}`);
@@ -328,8 +328,10 @@ export async function dbSearchAll(query: string): Promise<SearchResult[]> {
     } catch { return new Set(); }
   };
   const [hiddenBooks, hiddenChapters, hiddenDecks, hiddenFlashcards] = await Promise.all([
-    loadHiddenSet('book'), loadHiddenSet('chapter'),
-    loadHiddenSet('deck'), loadHiddenSet('flashcard'),
+    loadHiddenSet('book'),
+    loadHiddenSet('chapter'),
+    loadHiddenSet('deck'),
+    loadHiddenSet('flashcard'),
   ]);
 
   // Books
@@ -405,4 +407,68 @@ export async function dbSearchAll(query: string): Promise<SearchResult[]> {
   }
 
   return results;
+}
+
+// ─── SUPERADMIN ───────────────────────────────────────────────
+const SUPERADMIN_PW_KEY = 'superadmin_password_hash';
+
+export async function superadminIsSetup(): Promise<boolean> {
+  const val = await AsyncStorage.getItem(SUPERADMIN_PW_KEY).catch(() => null);
+  return !!val;
+}
+
+export async function superadminSetPassword(hash: string): Promise<void> {
+  await AsyncStorage.setItem(SUPERADMIN_PW_KEY, hash);
+}
+
+export async function superadminVerifyPassword(hash: string): Promise<boolean> {
+  const stored = await AsyncStorage.getItem(SUPERADMIN_PW_KEY).catch(() => null);
+  return stored === hash;
+}
+
+export interface AdminUser {
+  id: string;
+  username: string;
+  created: string;
+}
+
+export async function dbGetAllUsers(): Promise<AdminUser[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<any>(
+    `SELECT id, username, created FROM users ORDER BY created ASC`
+  ).catch(() => []);
+  return rows.map(r => ({ id: r.id, username: r.username, created: r.created }));
+}
+
+export async function dbAdminUpdateUsername(id: string, newUsername: string): Promise<void> {
+  const db = await getDb();
+  // Check no collision
+  const existing = await db.getFirstAsync<{id:string}>(
+    `SELECT id FROM users WHERE username = ? COLLATE NOCASE AND id != ?`, [newUsername, id]
+  ).catch(() => null);
+  if (existing) throw new Error('USERNAME_TAKEN');
+  await db.runAsync(`UPDATE users SET username = ? WHERE id = ?`, [newUsername, id]);
+}
+
+export async function dbAdminUpdatePassword(id: string, newHash: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(`UPDATE users SET password_hash = ? WHERE id = ?`, [newHash, id]);
+}
+
+export async function dbAdminDeleteUser(id: string): Promise<void> {
+  const db = await getDb();
+  // Delete all user content first
+  await db.runAsync(`DELETE FROM solo_flashcards WHERE user_id = ?`, [id]);
+  await db.runAsync(`DELETE FROM solo_decks WHERE user_id = ?`, [id]);
+  await db.runAsync(`DELETE FROM chapter_flashcards WHERE user_id = ?`, [id]);
+  await db.runAsync(`DELETE FROM chapters WHERE user_id = ?`, [id]);
+  await db.runAsync(`DELETE FROM books WHERE user_id = ?`, [id]);
+  await db.runAsync(`DELETE FROM users WHERE id = ?`, [id]);
+}
+
+export async function dbGetUserStats(userId: string): Promise<{ books: number; decks: number }> {
+  const db = await getDb();
+  const books = await db.getFirstAsync<{c:number}>(`SELECT COUNT(*) as c FROM books WHERE user_id=?`, [userId]).catch(() => ({c:0}));
+  const decks = await db.getFirstAsync<{c:number}>(`SELECT COUNT(*) as c FROM solo_decks WHERE user_id=?`, [userId]).catch(() => ({c:0}));
+  return { books: books?.c ?? 0, decks: decks?.c ?? 0 };
 }

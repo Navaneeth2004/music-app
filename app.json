@@ -9,19 +9,20 @@
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": false,
-      "bundleIdentifier": "com.navaneeth2004.musicstudy"
+      "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
+        "backgroundColor": "#0A0A0F",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png",
-        "backgroundColor": "#0A0A0F"
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.navaneeth2004.musicstudy"
+      "package": "com.navaneeth2004.mobile",
+      "enableProguardInReleaseBuilds": true,
+      "enableShrinkResourcesInReleaseBuilds": true
     },
     "web": {
       "output": "static",
@@ -33,18 +34,15 @@
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
+          "imageWidth": 160,
           "resizeMode": "contain",
-          "backgroundColor": "#0A0A0F"
+          "backgroundColor": "#0A0A0F",
+          "dark": {
+            "backgroundColor": "#0A0A0F"
+          }
         }
       ],
-      [
-        "expo-image-picker",
-        {
-          "photosPermission": "Allow MusicStudy to access your photos for flashcard images.",
-          "cameraPermission": "Allow MusicStudy to use your camera to capture images."
-        }
-      ]
+      "expo-updates"
     ],
     "experiments": {
       "typedRoutes": true,
@@ -55,6 +53,19 @@
       "eas": {
         "projectId": "ece27308-f065-4a69-bea9-df5d59de7948"
       }
-    }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/ece27308-f065-4a69-bea9-df5d59de7948",
+      "enabled": true,
+      "fallbackToCacheTimeout": 0,
+      "checkAutomatically": "ON_LOAD"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "assetBundlePatterns": [
+      "assets/images/*",
+      "assets/fonts/*"
+    ]
   }
 }

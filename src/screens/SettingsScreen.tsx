@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, FontSize, Spacing, Radius } from '../constants/theme';
 import { User } from '../types';
 import { BackupScreen } from './BackupScreen';
+import { SuperAdminScreen } from './Superadminscreen';
 import { useAuth } from '../context/AuthContext';
 
 interface Props {
@@ -17,13 +18,15 @@ interface Props {
 
 export const SettingsScreen: React.FC<Props> = ({ user, onLogout, isAdmin }) => {
   const { unlockAdmin, lockAdmin } = useAuth();
-  const [showBackup,    setShowBackup]    = useState(false);
-  const [showAdminModal, setShowAdminModal] = useState(false);
-  const [password,      setPassword]      = useState('');
-  const [unlocking,     setUnlocking]     = useState(false);
-  const [unlockError,   setUnlockError]   = useState('');
+  const [showBackup,      setShowBackup]      = useState(false);
+  const [showSuperAdmin,  setShowSuperAdmin]  = useState(false);
+  const [showAdminModal,  setShowAdminModal]  = useState(false);
+  const [password,        setPassword]        = useState('');
+  const [unlocking,       setUnlocking]       = useState(false);
+  const [unlockError,     setUnlockError]     = useState('');
 
-  if (showBackup) return <BackupScreen onBack={() => setShowBackup(false)} />;
+  if (showBackup)    return <BackupScreen     onBack={() => setShowBackup(false)} />;
+  if (showSuperAdmin) return <SuperAdminScreen onBack={() => setShowSuperAdmin(false)} />;
 
   const openAdminModal = () => {
     setPassword(''); setUnlockError(''); setShowAdminModal(true);
@@ -80,7 +83,7 @@ export const SettingsScreen: React.FC<Props> = ({ user, onLogout, isAdmin }) => 
           </Pressable>
         </View>
 
-        {/* Admin switch */}
+        {/* Admin switch — available to all users */}
         <Text style={s.sectionLabel}>ACCESS</Text>
         <View style={s.card}>
           {isAdmin ? (
@@ -98,6 +101,25 @@ export const SettingsScreen: React.FC<Props> = ({ user, onLogout, isAdmin }) => 
           )}
         </View>
 
+        {/* Superadmin — only visible when in admin mode */}
+        {isAdmin && (
+          <>
+            <Text style={s.sectionLabel}>SYSTEM</Text>
+            <View style={s.card}>
+              <Pressable onPress={() => setShowSuperAdmin(true)} style={({ pressed }) => [s.row, pressed && { opacity: 0.7 }]}>
+                <View style={s.superIconBox}>
+                  <Text style={{ fontSize: 15 }}>🛡️</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.superLabel}>Superadmin</Text>
+                  <Text style={s.superSub}>View and manage all users</Text>
+                </View>
+                <Text style={s.chevron}>›</Text>
+              </Pressable>
+            </View>
+          </>
+        )}
+
         <Pressable onPress={onLogout} style={({ pressed }) => [s.logoutBtn, pressed && { opacity: 0.7 }]}>
           <Text style={s.logoutText}>Log Out</Text>
         </Pressable>
@@ -109,7 +131,7 @@ export const SettingsScreen: React.FC<Props> = ({ user, onLogout, isAdmin }) => 
           <View style={s.modalBox}>
             <Text style={s.modalTitle}>Admin Access</Text>
             <Text style={s.modalSub}>Enter your password to switch to admin mode.</Text>
-            {unlockError ? <Text style={s.errText}>{unlockError}</Text> : null}
+            {!!unlockError && <Text style={s.errText}>{unlockError}</Text>}
             <TextInput
               style={s.passInput}
               value={password}
@@ -122,11 +144,17 @@ export const SettingsScreen: React.FC<Props> = ({ user, onLogout, isAdmin }) => 
               onSubmitEditing={handleUnlock}
             />
             <View style={s.modalActions}>
-              <Pressable onPress={() => { setShowAdminModal(false); setPassword(''); setUnlockError(''); }} style={s.modalCancel}>
+              <Pressable
+                onPress={() => { setShowAdminModal(false); setPassword(''); setUnlockError(''); }}
+                style={s.modalCancel}
+              >
                 <Text style={s.modalCancelText}>Cancel</Text>
               </Pressable>
-              <Pressable onPress={handleUnlock} disabled={!password || unlocking}
-                style={[s.modalConfirm, (!password || unlocking) && { opacity: 0.4 }]}>
+              <Pressable
+                onPress={handleUnlock}
+                disabled={!password || unlocking}
+                style={[s.modalConfirm, (!password || unlocking) && { opacity: 0.4 }]}
+              >
                 {unlocking
                   ? <ActivityIndicator color="#fff" size="small" />
                   : <Text style={s.modalConfirmText}>Unlock</Text>
@@ -169,6 +197,9 @@ const s = StyleSheet.create({
   rowValue:         { fontSize: FontSize.sm, color: Colors.textSecondary },
   divider:          { height: 1, backgroundColor: Colors.border, marginLeft: Spacing.lg },
   chevron:          { color: Colors.textMuted, fontSize: 20 },
+  superIconBox:     { width: 32, height: 32, borderRadius: 8, backgroundColor: Colors.accent + '22', borderWidth: 1, borderColor: Colors.accent + '44', alignItems: 'center', justifyContent: 'center' },
+  superLabel:       { fontSize: FontSize.md, fontWeight: '700', color: Colors.textPrimary },
+  superSub:         { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 1 },
   logoutBtn:        { marginTop: Spacing.md, backgroundColor: Colors.error + '18', borderWidth: 1, borderColor: Colors.error + '44', borderRadius: Radius.md, paddingVertical: Spacing.md, alignItems: 'center' },
   logoutText:       { color: Colors.error, fontSize: FontSize.md, fontWeight: '700' },
   overlay:          { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', padding: Spacing.lg },
