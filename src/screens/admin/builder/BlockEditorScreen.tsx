@@ -16,6 +16,7 @@ import { pickAudio, PickedAudio } from '../../../utils/pickAudio';
 import { ImagePickerModal } from '../../../components/shared/ImagePickerModal';
 import { ImageLightbox } from '../../../components/shared/ImageLightbox';
 import { AudioPlayer } from '../../../components/shared/AudioPlayer';
+import { BlockPreview, RichText, bp } from '../../../components/shared/Blockpreview';
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 
@@ -33,27 +34,6 @@ const BLOCK_META: { type: BlockType; label: string; icon: string; desc: string; 
 ];
 const metaFor = (t: BlockType) => BLOCK_META.find(m => m.type === t)!;
 
-// ─── RichText ─────────────────────────────────────────────────
-export const RichText: React.FC<{ text: string; style?: any }> = ({ text, style }) => {
-  if (!text) return null;
-  const parts: { t: string; b: boolean; i: boolean }[] = [];
-  const re = /<b>(.*?)<\/b>|<i>(.*?)<\/i>|([^<]+)/g;
-  let m;
-  while ((m = re.exec(text)) !== null) {
-    if (m[1] !== undefined) parts.push({ t: m[1], b: true,  i: false });
-    else if (m[2] !== undefined) parts.push({ t: m[2], b: false, i: true  });
-    else if (m[3] !== undefined) parts.push({ t: m[3], b: false, i: false });
-  }
-  return (
-    <Text style={style}>
-      {parts.map((p, i) => (
-        <Text key={i} style={[p.b && { fontWeight: '700' as const }, p.i && { fontStyle: 'italic' as const }]}>
-          {p.t}
-        </Text>
-      ))}
-    </Text>
-  );
-};
 
 // ─── Main Editor ──────────────────────────────────────────────
 export const BlockEditorScreen: React.FC<Props> = ({ chapter, book, onBack }) => {
@@ -227,7 +207,7 @@ export const BlockEditorScreen: React.FC<Props> = ({ chapter, book, onBack }) =>
               <Text style={s.emptySub}>Press Edit to start building</Text>
             </View>
           )}
-          {blocks.map(b => <PreviewBlock key={b.id} block={b} chapterRecord={chapter} />)}
+          {blocks.map(b => <BlockPreview key={b.id} block={b} />)}
         </ScrollView>
       )}
 
@@ -355,109 +335,6 @@ export const BlockEditorScreen: React.FC<Props> = ({ chapter, book, onBack }) =>
     </GestureHandlerRootView>
   );
 };
-
-// ─── Preview ──────────────────────────────────────────────────
-const TappablePreviewImage: React.FC<{ uri: string }> = ({ uri }) => {
-  const [open, setOpen] = React.useState(false);
-  return (
-    <>
-      <Pressable onPress={() => setOpen(true)}>
-        <Image source={{ uri }} style={pv.image} resizeMode="contain" />
-      </Pressable>
-      <ImageLightbox uri={open ? uri : null} onClose={() => setOpen(false)} />
-    </>
-  );
-};
-
-const PreviewBlock: React.FC<{ block: ContentBlock; chapterRecord: any }> = ({ block: b, chapterRecord }) => {
-  if (b.type === 'divider') return <View style={pv.divider} />;
-  if (b.type === 'heading') return <RichText text={b.text ?? ''} style={pv.heading} />;
-  if (b.type === 'subheading') return <RichText text={b.text ?? ''} style={pv.subheading} />;
-  if (b.type === 'paragraph') return <RichText text={b.text ?? ''} style={pv.paragraph} />;
-  if (b.type === 'bullets') return (
-    <View style={pv.bullets}>
-      {(b.bullets ?? []).map((pt, i) => (
-        <View key={i} style={pv.bulletRow}>
-          <View style={pv.dot} />
-          <RichText text={pt} style={pv.bulletText} />
-        </View>
-      ))}
-    </View>
-  );
-  if (b.type === 'image') {
-    // imageFile stores a full local URI with SQLite (or legacy PB filename for old data)
-    const imgUri = b.imageFile ?? b.imageUrl ?? null;
-    if (!imgUri) return null;
-    return (
-      <View>
-        <TappablePreviewImage uri={imgUri} />
-        {b.caption ? <Text style={pv.caption}>{b.caption}</Text> : null}
-      </View>
-    );
-  }
-  if (b.type === 'audio') {
-    // audioFile stores a full local URI with SQLite
-    const uri = b.audioFile ?? null;
-    if (!uri) return null;
-    return (
-      <View style={pv.audioWrap}>
-        {b.audioLabel ? <Text style={pv.blockLabel}>{b.audioLabel}</Text> : null}
-        <AudioPlayer uri={uri} accentColor={Colors.accent} />
-        {b.caption ? <Text style={pv.caption}>{b.caption}</Text> : null}
-      </View>
-    );
-  }
-  if (b.type === 'table') {
-    const headers = b.headers ?? []; const rows = b.rows ?? [];
-    return (
-      <View>
-        <View style={pv.table}>
-          <View style={pv.tableHRow}>
-            {headers.map((h, i) => (
-              <View key={i} style={[pv.tableCell, i < headers.length - 1 && pv.cellBorder]}>
-                <RichText text={h} style={pv.tableHText} />
-              </View>
-            ))}
-          </View>
-          {rows.map((row, ri) => (
-            <View key={ri} style={[pv.tableRow, ri < rows.length - 1 && pv.rowBorder]}>
-              {row.cells.map((cell, ci) => (
-                <View key={ci} style={[pv.tableCell, ci < row.cells.length - 1 && pv.cellBorder]}>
-                  <RichText text={cell} style={pv.tableCellText} />
-                </View>
-              ))}
-            </View>
-          ))}
-        </View>
-        {b.caption ? <Text style={pv.caption}>{b.caption}</Text> : null}
-      </View>
-    );
-  }
-  return null;
-};
-
-const pv = StyleSheet.create({
-  heading: { fontSize: FontSize.xl, fontWeight: '800', color: Colors.textPrimary, marginTop: Spacing.lg, marginBottom: Spacing.sm },
-  subheading: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary, marginTop: Spacing.md, marginBottom: Spacing.xs },
-  paragraph: { fontSize: FontSize.md, color: Colors.textSecondary, lineHeight: 24, marginBottom: Spacing.md },
-  bullets: { marginBottom: Spacing.md, gap: Spacing.xs },
-  bulletRow: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm },
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.accent, marginTop: 9 },
-  bulletText: { flex: 1, fontSize: FontSize.md, color: Colors.textSecondary, lineHeight: 24 },
-  divider: { height: 1, backgroundColor: Colors.border, marginVertical: Spacing.lg },
-  image: { width: '100%', height: 200, borderRadius: Radius.md, marginBottom: Spacing.md },
-  audioWrap: { marginBottom: Spacing.md },
-  caption:    { fontSize: FontSize.xs, color: Colors.textMuted, fontStyle: 'italic', marginTop: 4 },
-  blockLabel: { fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: '600', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
-  table: { borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.md, overflow: 'hidden', marginBottom: Spacing.md },
-  tableHRow: { flexDirection: 'row', backgroundColor: Colors.accent + '22' },
-  tableRow: { flexDirection: 'row' },
-  rowBorder: { borderBottomWidth: 1, borderBottomColor: Colors.border },
-  tableCell: { flex: 1, padding: Spacing.sm },
-  cellBorder: { borderRightWidth: 1, borderRightColor: Colors.border },
-  tableHText: { color: Colors.accentLight, fontWeight: '700', fontSize: FontSize.sm },
-  tableCellText: { color: Colors.textSecondary, fontSize: FontSize.sm },
-});
 
 // ─── Edit Block Card ──────────────────────────────────────────
 type PI = import('../../../utils/pickImage').PickedImage;
@@ -663,7 +540,7 @@ const TableEditor: React.FC<{ block: ContentBlock; onUpdate: (u: Partial<Content
         style={tbl.captionInput}
         value={block.caption ?? ''}
         onChangeText={v => onUpdate({ caption: v })}
-        placeholder="Caption / hint (optional)"
+        placeholder="Hint / caption (optional)"
         placeholderTextColor={Colors.textMuted}
       />
     </View>
@@ -731,7 +608,7 @@ const ImageEditor: React.FC<{
         style={img.captionInput}
         value={block.caption ?? ''}
         onChangeText={v => onUpdate({ caption: v })}
-        placeholder="Caption / hint (optional)"
+        placeholder="Hint / caption (optional)"
         placeholderTextColor={Colors.textMuted}
       />
     </View>
@@ -804,7 +681,7 @@ const AudioEditor: React.FC<{
         style={au.captionInput}
         value={block.caption ?? ''}
         onChangeText={v => onUpdate({ caption: v })}
-        placeholder="Caption / hint (optional)"
+        placeholder="Hint / caption (optional)"
         placeholderTextColor={Colors.textMuted}
       />
     </View>

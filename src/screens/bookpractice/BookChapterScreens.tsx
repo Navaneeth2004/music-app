@@ -5,8 +5,8 @@ import { Colors, Spacing, Radius, FontSize } from '../../constants/theme';
 import { Book, Chapter } from '../../types';
 import { ContentBlock } from '../../types/blocks';
 import { getBooks, getChapters, getChapter } from '../../api/content';
-import { s, bs, RichText, BackButton, Empty, ZoomableImage } from './practiceShared';
-import { AudioPlayer } from '../../components/shared/AudioPlayer';
+import { s, BackButton, Empty } from './practiceShared';
+import { BlockPreview, RichText } from '../../components/shared/Blockpreview';
 import { getFavorites, toggleFavorite } from '../../utils/favorites';
 import { getHidden, toggleHidden } from '../../utils/hidden';
 import { useAuth } from '../../context/AuthContext';
@@ -263,22 +263,31 @@ export const ChapterViewScreen: React.FC<{
   onBack: () => void;
 }> = ({ book, chapter: initialChapter, onFlashcards, onBack }) => {
   const [chapter, setChapter] = useState<Chapter>(initialChapter);
+  const [blocks, setBlocks]   = useState<ContentBlock[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setLoading(true);
     getChapter(initialChapter.id)
-      .then(fresh => setChapter(fresh))
+      .then(fresh => {
+        setChapter(fresh);
+        try {
+          const raw = fresh.content;
+          const parsed = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : [];
+          setBlocks(Array.isArray(parsed) ? parsed : []);
+        } catch { setBlocks([]); }
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [initialChapter.id]);
 
-  const blocks: ContentBlock[] = (() => {
-    try {
-      const raw = chapter.content;
-      if (!raw) return [];
-      return typeof raw === 'string' ? JSON.parse(raw) : raw;
-    } catch { return []; }
-  })();
+  if (loading) {
+    return (
+      <SafeAreaView style={s.safe}>
+        <ActivityIndicator style={{ flex: 1 }} color={Colors.accent} />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={s.safe}>
@@ -296,11 +305,9 @@ export const ChapterViewScreen: React.FC<{
         </View>
         <Text style={s.chapterTitle}>{chapter.title}</Text>
         {chapter.subtitle ? <Text style={s.chapterSub}>{chapter.subtitle}</Text> : null}
-        {loading
-          ? <ActivityIndicator style={{ marginTop: Spacing.xl }} />
-          : blocks.length === 0
-            ? <View style={{ marginTop: Spacing.xl }}><Empty icon="📝" title="No content yet" subtitle="Check back soon" /></View>
-            : <View style={{ marginBottom: Spacing.xl }}>{blocks.map(b => <RenderBlock key={b.id} block={b} chapterRecord={chapter} />)}</View>
+        {blocks.length === 0
+          ? <View style={{ marginTop: Spacing.xl }}><Empty icon="📝" title="No content yet" subtitle="Check back soon" /></View>
+          : <View style={{ marginBottom: Spacing.xl }}>{blocks.map(b => <BlockPreview key={b.id} block={b} />)}</View>
         }
         <Pressable onPress={onFlashcards}
           style={[s.flashcardsBtn, { borderColor: book.color + '55', backgroundColor: book.color + '11' }]}>
@@ -311,69 +318,4 @@ export const ChapterViewScreen: React.FC<{
       </ScrollView>
     </SafeAreaView>
   );
-};
-
-// ─── Block renderer ────────────────────────────────────────────
-const RenderBlock: React.FC<{ block: ContentBlock; chapterRecord: any }> = ({ block: b, chapterRecord }) => {
-  if (b.type === 'divider') return <View style={bs.divider} />;
-  if (b.type === 'heading') return <RichText text={b.text ?? ''} style={bs.heading} />;
-  if (b.type === 'subheading') return <RichText text={b.text ?? ''} style={bs.subheading} />;
-  if (b.type === 'paragraph') return <RichText text={b.text ?? ''} style={bs.paragraph} />;
-  if (b.type === 'bullets') return (
-    <View style={bs.bullets}>
-      {(b.bullets ?? []).map((pt, i) => (
-        <View key={i} style={bs.bulletRow}>
-          <View style={bs.bulletDot} />
-          <RichText text={pt} style={bs.bulletText} />
-        </View>
-      ))}
-    </View>
-  );
-  if (b.type === 'image') {
-    const imgUri = b.imageFile ?? b.imageUrl ?? null;
-    if (!imgUri) return null;
-    return (
-      <View>
-        <ZoomableImage uri={imgUri} style={bs.image} />
-        {b.caption ? <Text style={bs.caption}>{b.caption}</Text> : null}
-      </View>
-    );
-  }
-  if (b.type === 'audio') {
-    const uri = b.audioFile ?? null;
-    if (!uri) return null;
-    return (
-      <View style={bs.audioWrap}>
-        {b.audioLabel ? <Text style={bs.blockLabel}>{b.audioLabel}</Text> : null}
-        <AudioPlayer uri={uri} accentColor={Colors.accent} />
-        {b.caption ? <Text style={bs.caption}>{b.caption}</Text> : null}
-      </View>
-    );
-  }
-  if (b.type === 'table') {
-    const headers = b.headers ?? [];
-    const rows = b.rows ?? [];
-    return (
-      <View style={bs.table}>
-        <View style={bs.tableHRow}>
-          {headers.map((h, i) => (
-            <View key={i} style={[bs.tableCell, i < headers.length - 1 && bs.cellBorder]}>
-              <RichText text={h} style={bs.tableHText} />
-            </View>
-          ))}
-        </View>
-        {rows.map((row, ri) => (
-          <View key={ri} style={[bs.tableRow, ri < rows.length - 1 && bs.rowBorder]}>
-            {row.cells.map((cell, ci) => (
-              <View key={ci} style={[bs.tableCell, ci < row.cells.length - 1 && bs.cellBorder]}>
-                <RichText text={cell} style={bs.tableCellText} />
-              </View>
-            ))}
-          </View>
-        ))}
-        {b.caption ? <Text style={bs.caption}>{b.caption}</Text> : null}
-      </View>
-    );
-  }
-  return null;
 };

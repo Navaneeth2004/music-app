@@ -533,7 +533,7 @@ export const s = StyleSheet.create({
   badge:             { alignSelf: 'flex-start', borderWidth: 1, borderRadius: 999, paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs, marginBottom: Spacing.sm },
   badgeText:         { fontSize: FontSize.xs, fontWeight: '700', letterSpacing: 1.5 },
   chapterTitle:      { fontSize: FontSize.xxl, fontWeight: '800', color: Colors.textPrimary, letterSpacing: -0.5, marginBottom: Spacing.xs },
-  chapterSub:        { fontSize: FontSize.md, color: Colors.textSecondary, marginBottom: Spacing.xl },
+  chapterSub:        { fontSize: FontSize.md, color: Colors.textSecondary, marginBottom: Spacing.md },
   flashcardsBtn:     { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, borderWidth: 1.5, borderRadius: Radius.lg, padding: Spacing.md, marginTop: Spacing.md },
   flashcardsBtnText: { flex: 1, fontSize: FontSize.md, fontWeight: '700' },
 
@@ -638,28 +638,4 @@ export const s = StyleSheet.create({
   retryText:   { fontSize: FontSize.md, fontWeight: '700' },
   doneBtn:     { backgroundColor: Colors.surfaceAlt, borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.md, paddingVertical: Spacing.md, alignItems: 'center' },
   doneBtnText: { color: Colors.textSecondary, fontWeight: '600', fontSize: FontSize.md },
-});
-
-// ─── Block styles (used by BookChapterScreens) ─────────────────
-export const bs = StyleSheet.create({
-  heading:       { fontSize: FontSize.xl,  fontWeight: '800', color: Colors.textPrimary, marginTop: Spacing.lg, marginBottom: Spacing.sm },
-  subheading:    { fontSize: FontSize.lg,  fontWeight: '700', color: Colors.textPrimary, marginTop: Spacing.md, marginBottom: Spacing.xs },
-  paragraph:     { fontSize: FontSize.md,  color: Colors.textSecondary, lineHeight: 24, marginBottom: Spacing.md },
-  bullets:       { marginBottom: Spacing.md, gap: Spacing.xs },
-  bulletRow:     { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm },
-  bulletDot:     { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.accent, marginTop: 9 },
-  bulletText:    { flex: 1, fontSize: FontSize.md, color: Colors.textSecondary, lineHeight: 24 },
-  divider:       { height: 1, backgroundColor: Colors.border, marginVertical: Spacing.lg },
-  image:         { width: '100%', height: 220, borderRadius: Radius.md, marginBottom: Spacing.md },
-  audioWrap:     { marginBottom: Spacing.md },
-  caption:       { fontSize: FontSize.xs, color: Colors.textMuted, fontStyle: 'italic', marginTop: 4 },
-  blockLabel:    { fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: '600', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
-  table:         { borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.md, overflow: 'hidden', marginBottom: Spacing.md },
-  tableHRow:     { flexDirection: 'row', backgroundColor: Colors.accent + '18' },
-  tableRow:      { flexDirection: 'row' },
-  rowBorder:     { borderBottomWidth: 1, borderBottomColor: Colors.border },
-  tableCell:     { flex: 1, padding: Spacing.sm },
-  cellBorder:    { borderRightWidth: 1, borderRightColor: Colors.border },
-  tableHText:    { color: Colors.accentLight, fontWeight: '700', fontSize: FontSize.sm },
-  tableCellText: { color: Colors.textSecondary, fontSize: FontSize.sm },
 });

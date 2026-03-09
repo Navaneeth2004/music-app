@@ -16,8 +16,7 @@ import { ExportNameModal, ExportPrompt } from '../../../components/shared/Export
 import { InfoModal, InfoModalData }      from '../../../components/shared/Infomodal';
 import { ImportModal }                   from '../../../components/shared/ImportModal';
 import { getHidden, toggleHidden } from '../../../utils/hidden';
-import { ImageLightbox } from '../../../components/shared/ImageLightbox';
-import { AudioPlayer } from '../../../components/shared/AudioPlayer';
+import { BlockPreview } from '../../../components/shared/Blockpreview';
 
 
 interface Props { book: Book; onBack: () => void; }
@@ -317,78 +316,10 @@ const ChapterPreviewScreen: React.FC<{ chapter: Chapter; book: Book; onEdit: () 
         {chapter.subtitle ? <Text style={{ fontSize: FontSize.md, color: Colors.textSecondary, marginBottom: Spacing.lg }}>{chapter.subtitle}</Text> : null}
         {blocks.length === 0
           ? <Text style={{ color: Colors.textMuted, fontStyle: 'italic', marginTop: Spacing.xl, textAlign: 'center' }}>No content blocks yet. Tap Edit to add content.</Text>
-          : blocks.map(b => <PreviewBlock key={b.id} block={b} />)}
+          : blocks.map(b => <BlockPreview key={b.id} block={b} />)}
       </ScrollView>
     </SafeAreaView>
   );
-};
-
-const TappableImage: React.FC<{ uri: string }> = ({ uri }) => {
-  const [open, setOpen] = React.useState(false);
-  return (
-    <>
-      <Pressable onPress={() => setOpen(true)} style={{ marginBottom: Spacing.md }}>
-        <Image source={{ uri }} style={{ width: '100%', height: 200, borderRadius: Radius.md }} resizeMode="contain" />
-      </Pressable>
-      <ImageLightbox uri={open ? uri : null} onClose={() => setOpen(false)} />
-    </>
-  );
-};
-
-const PreviewBlock: React.FC<{ block: ContentBlock }> = ({ block: b }) => {
-  if (b.type === 'divider') return <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: Spacing.md }} />;
-  if (b.type === 'heading') return <Text style={{ fontSize: FontSize.xl, fontWeight: '800', color: Colors.textPrimary, marginBottom: Spacing.sm }}>{b.text}</Text>;
-  if (b.type === 'subheading') return <Text style={{ fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary, marginBottom: Spacing.xs }}>{b.text}</Text>;
-  if (b.type === 'paragraph') return <Text style={{ fontSize: FontSize.md, color: Colors.textSecondary, lineHeight: 24, marginBottom: Spacing.sm }}>{b.text}</Text>;
-  if (b.type === 'bullets') return (
-    <View style={{ marginBottom: Spacing.sm }}>
-      {(b.bullets ?? []).map((pt, i) => (
-        <View key={i} style={{ flexDirection: 'row', gap: Spacing.sm, marginBottom: 4 }}>
-          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.accent, marginTop: 9 }} />
-          <Text style={{ flex: 1, fontSize: FontSize.md, color: Colors.textSecondary, lineHeight: 24 }}>{pt}</Text>
-        </View>
-      ))}
-    </View>
-  );
-  if (b.type === 'image') {
-    const uri = b.imageFile ?? b.imageUrl ?? null;
-    if (!uri) return null;
-    return (
-      <View>
-        <TappableImage uri={uri} />
-        {b.caption ? <Text style={{ fontSize: FontSize.xs, color: Colors.textMuted, fontStyle: 'italic', marginTop: 4 }}>{b.caption}</Text> : null}
-      </View>
-    );
-  }
-  if (b.type === 'audio') {
-    const uri = b.audioFile ?? null;
-    if (!uri) return null;
-    return (
-      <View style={{ marginBottom: Spacing.md }}>
-        {b.audioLabel ? <Text style={{ fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: '600', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>{b.audioLabel}</Text> : null}
-        <AudioPlayer uri={uri} accentColor={Colors.accent} />
-        {b.caption ? <Text style={{ fontSize: FontSize.xs, color: Colors.textMuted, fontStyle: 'italic', marginTop: 4 }}>{b.caption}</Text> : null}
-      </View>
-    );
-  }
-  if (b.type === 'table') return (
-    <View style={{ marginBottom: Spacing.md }}>
-      <View style={{ marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.md, overflow: 'hidden' }}>
-        {b.headers && b.headers.length > 0 && (
-          <View style={{ flexDirection: 'row', backgroundColor: Colors.surfaceAlt }}>
-            {b.headers.map((h, i) => <Text key={i} style={{ flex: 1, padding: 8, fontWeight: '700', color: Colors.textPrimary, fontSize: FontSize.sm }}>{h}</Text>)}
-          </View>
-        )}
-        {(b.rows ?? []).map((row, ri) => (
-          <View key={ri} style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: Colors.border }}>
-            {row.cells.map((cell, ci) => <Text key={ci} style={{ flex: 1, padding: 8, color: Colors.textSecondary, fontSize: FontSize.sm }}>{cell}</Text>)}
-          </View>
-        ))}
-      </View>
-      {b.caption ? <Text style={{ fontSize: FontSize.xs, color: Colors.textMuted, fontStyle: 'italic', marginTop: 4 }}>{b.caption}</Text> : null}
-    </View>
-  );
-  return null;
 };
 
 const s = StyleSheet.create({
