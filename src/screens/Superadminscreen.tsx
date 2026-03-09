@@ -13,7 +13,6 @@ import {
   dbGetAllUsers, dbAdminUpdateUsername, dbAdminUpdatePassword,
   dbAdminDeleteUser, dbGetUserStats, AdminUser,
 } from '../api/db';
-import { ADMIN_USERNAME } from '../constants/admin';
 
 interface Props { onBack: () => void; }
 
@@ -152,7 +151,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     load();
   };
 
-  const studentCount = users.filter(u => u.username.toLowerCase() !== ADMIN_USERNAME.toLowerCase()).length;
+  const studentCount = users.length;
 
   return (
     <SafeAreaView style={s.safe}>
@@ -172,14 +171,6 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             <Text style={s.statNum}>{users.length}</Text>
             <Text style={s.statLabel}>Total Users</Text>
           </View>
-          <View style={[s.statBox, { borderLeftWidth: 1, borderLeftColor: Colors.border }]}>
-            <Text style={s.statNum}>{studentCount}</Text>
-            <Text style={s.statLabel}>Students</Text>
-          </View>
-          <View style={[s.statBox, { borderLeftWidth: 1, borderLeftColor: Colors.border }]}>
-            <Text style={s.statNum}>1</Text>
-            <Text style={s.statLabel}>Admin</Text>
-          </View>
         </View>
 
         <Text style={s.sectionLabel}>ALL USERS</Text>
@@ -188,7 +179,6 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         {loading
           ? <ActivityIndicator color={Colors.accent} style={{ marginTop: Spacing.xl }} />
           : users.map(u => {
-              const isAdmin = u.username.toLowerCase() === ADMIN_USERNAME.toLowerCase();
               return (
                 <SwipeableRow
                   key={u.id}
@@ -198,7 +188,6 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                   rightIcon="✏️"
                   rightColor={Colors.accent}
                   onDelete={() => setDeleteTarget(u)}
-                  deleteDisabled={isAdmin}
                 >
                   <UserCard user={u} />
                 </SwipeableRow>
@@ -228,22 +217,17 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 // ─── User card (display only, no buttons) ────────────────────
 const UserCard: React.FC<{ user: AdminUser }> = ({ user }) => {
   const [stats, setStats] = useState<{ books: number; decks: number } | null>(null);
-  const isAdmin     = user.username.toLowerCase() === ADMIN_USERNAME.toLowerCase();
-  const avatarColor = isAdmin ? '#E05C6A' : Colors.accent;
-  const joined      = new Date(user.created).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const joined = new Date(user.created).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
   useEffect(() => { dbGetUserStats(user.id).then(setStats).catch(() => {}); }, [user.id]);
 
   return (
     <View style={s.userCard}>
-      <View style={[s.avatar, { backgroundColor: avatarColor + '22', borderColor: avatarColor + '55' }]}>
-        <Text style={[s.avatarText, { color: avatarColor }]}>{user.username.slice(0, 2).toUpperCase()}</Text>
+      <View style={s.avatar}>
+        <Text style={s.avatarText}>{user.username.slice(0, 2).toUpperCase()}</Text>
       </View>
       <View style={{ flex: 1 }}>
-        <View style={s.userNameRow}>
-          <Text style={s.userName}>{user.username}</Text>
-          {isAdmin && <View style={s.adminPill}><Text style={s.adminPillText}>ADMIN</Text></View>}
-        </View>
+        <Text style={s.userName}>{user.username}</Text>
         <Text style={s.userMeta}>Joined {joined}</Text>
         {stats && (
           <Text style={s.userStats}>
@@ -363,12 +347,9 @@ const s = StyleSheet.create({
   sectionLabel:  { fontSize: FontSize.xs, color: Colors.textMuted, letterSpacing: 1.5, fontWeight: '600', marginBottom: 4 },
   swipeTip:      { fontSize: FontSize.xs, color: Colors.textMuted + 'AA', marginBottom: Spacing.md, fontStyle: 'italic' },
   userCard:      { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, backgroundColor: Colors.surface, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, padding: Spacing.md },
-  avatar:        { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  avatarText:    { fontSize: FontSize.md, fontWeight: '800' },
-  userNameRow:   { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: 2 },
-  userName:      { fontSize: FontSize.md, fontWeight: '700', color: Colors.textPrimary },
-  adminPill:     { backgroundColor: '#E05C6A22', borderWidth: 1, borderColor: '#E05C6A55', borderRadius: 999, paddingHorizontal: 6, paddingVertical: 1 },
-  adminPillText: { color: '#E05C6A', fontSize: 9, fontWeight: '800', letterSpacing: 1 },
+  avatar:        { width: 44, height: 44, borderRadius: 22, borderWidth: 1, backgroundColor: Colors.accent + '22', borderColor: Colors.accent + '55', alignItems: 'center', justifyContent: 'center' },
+  avatarText:    { fontSize: FontSize.md, fontWeight: '800', color: Colors.accent },
+  userName:      { fontSize: FontSize.md, fontWeight: '700', color: Colors.textPrimary, marginBottom: 2 },
   userMeta:      { fontSize: FontSize.xs, color: Colors.textMuted },
   userStats:     { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 1 },
   formCard:      { backgroundColor: Colors.surface, borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.border, padding: Spacing.lg, gap: Spacing.sm },

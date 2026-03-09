@@ -1,7 +1,10 @@
+/**
+ * src/context/AuthContext.tsx
+ * Fully local auth — no PocketBase dependency at all.
+ */
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { login, register, logout, loadSession } from '../api/auth';
 import { User } from '../types';
-import { ADMIN_USERNAME } from '../constants/admin';
 
 interface AuthContextType {
   user:        User | null;
@@ -36,9 +39,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [error,         setError]         = useState<string | null>(null);
   const [adminUnlocked, setAdminUnlocked] = useState(false);
 
-  const isAdmin =
-    adminUnlocked ||
-    (!!user && user.username?.toLowerCase() === ADMIN_USERNAME.toLowerCase());
+  // Admin mode is only active when explicitly unlocked via Settings → Switch to Admin Mode.
+  const isAdmin = adminUnlocked;
 
   // Restore session on app start
   useEffect(() => {
