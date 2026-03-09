@@ -332,14 +332,21 @@ const RenderBlock: React.FC<{ block: ContentBlock; chapterRecord: any }> = ({ bl
   if (b.type === 'image') {
     const imgUri = b.imageFile ?? b.imageUrl ?? null;
     if (!imgUri) return null;
-    return <ZoomableImage uri={imgUri} style={bs.image} />;
+    return (
+      <View>
+        <ZoomableImage uri={imgUri} style={bs.image} />
+        {b.caption ? <Text style={bs.caption}>{b.caption}</Text> : null}
+      </View>
+    );
   }
   if (b.type === 'audio') {
     const uri = b.audioFile ?? null;
     if (!uri) return null;
     return (
       <View style={bs.audioWrap}>
+        {b.audioLabel ? <Text style={bs.blockLabel}>{b.audioLabel}</Text> : null}
         <AudioPlayer uri={uri} accentColor={Colors.accent} />
+        {b.caption ? <Text style={bs.caption}>{b.caption}</Text> : null}
       </View>
     );
   }
@@ -364,6 +371,7 @@ const RenderBlock: React.FC<{ block: ContentBlock; chapterRecord: any }> = ({ bl
             ))}
           </View>
         ))}
+        {b.caption ? <Text style={bs.caption}>{b.caption}</Text> : null}
       </View>
     );
   }

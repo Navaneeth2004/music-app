@@ -652,6 +652,8 @@ export const bs = StyleSheet.create({
   divider:       { height: 1, backgroundColor: Colors.border, marginVertical: Spacing.lg },
   image:         { width: '100%', height: 220, borderRadius: Radius.md, marginBottom: Spacing.md },
   audioWrap:     { marginBottom: Spacing.md },
+  caption:       { fontSize: FontSize.xs, color: Colors.textMuted, fontStyle: 'italic', marginTop: 4 },
+  blockLabel:    { fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: '600', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
   table:         { borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.md, overflow: 'hidden', marginBottom: Spacing.md },
   tableHRow:     { flexDirection: 'row', backgroundColor: Colors.accent + '18' },
   tableRow:      { flexDirection: 'row' },

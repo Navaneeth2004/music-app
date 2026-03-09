@@ -388,7 +388,12 @@ const PreviewBlock: React.FC<{ block: ContentBlock; chapterRecord: any }> = ({ b
     // imageFile stores a full local URI with SQLite (or legacy PB filename for old data)
     const imgUri = b.imageFile ?? b.imageUrl ?? null;
     if (!imgUri) return null;
-    return <TappablePreviewImage uri={imgUri} />;
+    return (
+      <View>
+        <TappablePreviewImage uri={imgUri} />
+        {b.caption ? <Text style={pv.caption}>{b.caption}</Text> : null}
+      </View>
+    );
   }
   if (b.type === 'audio') {
     // audioFile stores a full local URI with SQLite
@@ -396,30 +401,35 @@ const PreviewBlock: React.FC<{ block: ContentBlock; chapterRecord: any }> = ({ b
     if (!uri) return null;
     return (
       <View style={pv.audioWrap}>
+        {b.audioLabel ? <Text style={pv.blockLabel}>{b.audioLabel}</Text> : null}
         <AudioPlayer uri={uri} accentColor={Colors.accent} />
+        {b.caption ? <Text style={pv.caption}>{b.caption}</Text> : null}
       </View>
     );
   }
   if (b.type === 'table') {
     const headers = b.headers ?? []; const rows = b.rows ?? [];
     return (
-      <View style={pv.table}>
-        <View style={pv.tableHRow}>
-          {headers.map((h, i) => (
-            <View key={i} style={[pv.tableCell, i < headers.length - 1 && pv.cellBorder]}>
-              <RichText text={h} style={pv.tableHText} />
-            </View>
-          ))}
-        </View>
-        {rows.map((row, ri) => (
-          <View key={ri} style={[pv.tableRow, ri < rows.length - 1 && pv.rowBorder]}>
-            {row.cells.map((cell, ci) => (
-              <View key={ci} style={[pv.tableCell, ci < row.cells.length - 1 && pv.cellBorder]}>
-                <RichText text={cell} style={pv.tableCellText} />
+      <View>
+        <View style={pv.table}>
+          <View style={pv.tableHRow}>
+            {headers.map((h, i) => (
+              <View key={i} style={[pv.tableCell, i < headers.length - 1 && pv.cellBorder]}>
+                <RichText text={h} style={pv.tableHText} />
               </View>
             ))}
           </View>
-        ))}
+          {rows.map((row, ri) => (
+            <View key={ri} style={[pv.tableRow, ri < rows.length - 1 && pv.rowBorder]}>
+              {row.cells.map((cell, ci) => (
+                <View key={ci} style={[pv.tableCell, ci < row.cells.length - 1 && pv.cellBorder]}>
+                  <RichText text={cell} style={pv.tableCellText} />
+                </View>
+              ))}
+            </View>
+          ))}
+        </View>
+        {b.caption ? <Text style={pv.caption}>{b.caption}</Text> : null}
       </View>
     );
   }
@@ -437,6 +447,8 @@ const pv = StyleSheet.create({
   divider: { height: 1, backgroundColor: Colors.border, marginVertical: Spacing.lg },
   image: { width: '100%', height: 200, borderRadius: Radius.md, marginBottom: Spacing.md },
   audioWrap: { marginBottom: Spacing.md },
+  caption:    { fontSize: FontSize.xs, color: Colors.textMuted, fontStyle: 'italic', marginTop: 4 },
+  blockLabel: { fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: '600', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
   table: { borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.md, overflow: 'hidden', marginBottom: Spacing.md },
   tableHRow: { flexDirection: 'row', backgroundColor: Colors.accent + '22' },
   tableRow: { flexDirection: 'row' },
@@ -647,6 +659,13 @@ const TableEditor: React.FC<{ block: ContentBlock; onUpdate: (u: Partial<Content
           </View>
         </View>
       </Modal>
+      <TextInput
+        style={tbl.captionInput}
+        value={block.caption ?? ''}
+        onChangeText={v => onUpdate({ caption: v })}
+        placeholder="Caption / hint (optional)"
+        placeholderTextColor={Colors.textMuted}
+      />
     </View>
   );
 };
@@ -665,7 +684,8 @@ const tbl = StyleSheet.create({
   rmPlaceholder: { width: 28 },
   actions: { flexDirection: 'row', gap: Spacing.sm, paddingTop: Spacing.xs },
   btn: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs, borderRadius: Radius.sm, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surfaceAlt },
-  btnText: { color: Colors.textSecondary, fontSize: FontSize.sm, fontWeight: '600' },
+  btnText:      { color: Colors.textSecondary, fontSize: FontSize.sm, fontWeight: '600' },
+  captionInput: { backgroundColor: Colors.surfaceAlt, borderRadius: Radius.sm, borderWidth: 1, borderColor: Colors.border, color: Colors.textPrimary, fontSize: FontSize.sm, padding: Spacing.sm, marginTop: Spacing.xs },
 });
 
 // ─── Image Editor ─────────────────────────────────────────────
@@ -707,6 +727,13 @@ const ImageEditor: React.FC<{
           <Text style={img.uploadHint}>Camera or Photo Library</Text>
         </Pressable>
       )}
+      <TextInput
+        style={img.captionInput}
+        value={block.caption ?? ''}
+        onChangeText={v => onUpdate({ caption: v })}
+        placeholder="Caption / hint (optional)"
+        placeholderTextColor={Colors.textMuted}
+      />
     </View>
   );
 };
@@ -720,6 +747,7 @@ const img = StyleSheet.create({
   uploadIcon: { fontSize: 32 },
   uploadText: { color: Colors.textSecondary, fontSize: FontSize.md, fontWeight: '600' },
   uploadHint: { color: Colors.textMuted, fontSize: FontSize.xs },
+  captionInput: { backgroundColor: Colors.surfaceAlt, borderRadius: Radius.sm, borderWidth: 1, borderColor: Colors.border, color: Colors.textPrimary, fontSize: FontSize.sm, padding: Spacing.sm },
   unsavedBadge: { backgroundColor: Colors.warning + '22', borderRadius: Radius.sm, padding: Spacing.xs, alignItems: 'center' },
   unsavedText: { color: Colors.warning, fontSize: FontSize.xs, fontWeight: '600' },
 });
@@ -758,20 +786,27 @@ const AudioEditor: React.FC<{
       />
       {displayUri ? (
         <>
-          <AudioPlayer uri={displayUri} accentColor={Colors.warning} />
+          <AudioPlayer uri={displayUri} accentColor={Colors.accent} />
           <Pressable onPress={() => { onSetPendingAudio(null); onUpdate({ audioFile: undefined }); }} style={au.rmBtn}>
             <Text style={au.rmText}>Remove audio</Text>
           </Pressable>
         </>
       ) : (
         <Pressable onPress={handlePick} style={au.uploadBtn}>
-          <View style={[au.uploadIconBox, { backgroundColor: Colors.warning + '33' }]}>
-            <Text style={[au.uploadIconText, { color: Colors.warning }]}>♪</Text>
+          <View style={[au.uploadIconBox, { backgroundColor: Colors.accent + '33' }]}>
+            <Text style={[au.uploadIconText, { color: Colors.accent }]}>♪</Text>
           </View>
           <Text style={au.uploadText}>Tap to add audio</Text>
           <Text style={au.uploadHint}>Pick an audio file from device</Text>
         </Pressable>
       )}
+      <TextInput
+        style={au.captionInput}
+        value={block.caption ?? ''}
+        onChangeText={v => onUpdate({ caption: v })}
+        placeholder="Caption / hint (optional)"
+        placeholderTextColor={Colors.textMuted}
+      />
     </View>
   );
 };
@@ -786,6 +821,7 @@ const au = StyleSheet.create({
   uploadIconText:{ fontSize: 24, fontWeight: '700' },
   uploadText:    { color: Colors.textSecondary, fontSize: FontSize.md, fontWeight: '600' },
   uploadHint:    { color: Colors.textMuted, fontSize: FontSize.xs },
+  captionInput:  { backgroundColor: Colors.surfaceAlt, borderRadius: Radius.sm, borderWidth: 1, borderColor: Colors.border, color: Colors.textPrimary, fontSize: FontSize.sm, padding: Spacing.sm },
   unsavedBadge:  { backgroundColor: Colors.warning + '22', borderRadius: Radius.sm, padding: Spacing.xs, alignItems: 'center' },
   unsavedText:   { color: Colors.warning, fontSize: FontSize.xs, fontWeight: '600' },
 });

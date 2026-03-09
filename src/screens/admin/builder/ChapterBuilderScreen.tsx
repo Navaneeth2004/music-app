@@ -353,25 +353,39 @@ const PreviewBlock: React.FC<{ block: ContentBlock }> = ({ block: b }) => {
   if (b.type === 'image') {
     const uri = b.imageFile ?? b.imageUrl ?? null;
     if (!uri) return null;
-    return <TappableImage uri={uri} />;
+    return (
+      <View>
+        <TappableImage uri={uri} />
+        {b.caption ? <Text style={{ fontSize: FontSize.xs, color: Colors.textMuted, fontStyle: 'italic', marginTop: 4 }}>{b.caption}</Text> : null}
+      </View>
+    );
   }
   if (b.type === 'audio') {
     const uri = b.audioFile ?? null;
     if (!uri) return null;
-    return <View style={{ marginBottom: Spacing.md }}><AudioPlayer uri={uri} accentColor={Colors.accent} /></View>;
+    return (
+      <View style={{ marginBottom: Spacing.md }}>
+        {b.audioLabel ? <Text style={{ fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: '600', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>{b.audioLabel}</Text> : null}
+        <AudioPlayer uri={uri} accentColor={Colors.accent} />
+        {b.caption ? <Text style={{ fontSize: FontSize.xs, color: Colors.textMuted, fontStyle: 'italic', marginTop: 4 }}>{b.caption}</Text> : null}
+      </View>
+    );
   }
   if (b.type === 'table') return (
-    <View style={{ marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.md, overflow: 'hidden' }}>
-      {b.headers && b.headers.length > 0 && (
-        <View style={{ flexDirection: 'row', backgroundColor: Colors.surfaceAlt }}>
-          {b.headers.map((h, i) => <Text key={i} style={{ flex: 1, padding: 8, fontWeight: '700', color: Colors.textPrimary, fontSize: FontSize.sm }}>{h}</Text>)}
-        </View>
-      )}
-      {(b.rows ?? []).map((row, ri) => (
-        <View key={ri} style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: Colors.border }}>
-          {row.cells.map((cell, ci) => <Text key={ci} style={{ flex: 1, padding: 8, color: Colors.textSecondary, fontSize: FontSize.sm }}>{cell}</Text>)}
-        </View>
-      ))}
+    <View style={{ marginBottom: Spacing.md }}>
+      <View style={{ marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.md, overflow: 'hidden' }}>
+        {b.headers && b.headers.length > 0 && (
+          <View style={{ flexDirection: 'row', backgroundColor: Colors.surfaceAlt }}>
+            {b.headers.map((h, i) => <Text key={i} style={{ flex: 1, padding: 8, fontWeight: '700', color: Colors.textPrimary, fontSize: FontSize.sm }}>{h}</Text>)}
+          </View>
+        )}
+        {(b.rows ?? []).map((row, ri) => (
+          <View key={ri} style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: Colors.border }}>
+            {row.cells.map((cell, ci) => <Text key={ci} style={{ flex: 1, padding: 8, color: Colors.textSecondary, fontSize: FontSize.sm }}>{cell}</Text>)}
+          </View>
+        ))}
+      </View>
+      {b.caption ? <Text style={{ fontSize: FontSize.xs, color: Colors.textMuted, fontStyle: 'italic', marginTop: 4 }}>{b.caption}</Text> : null}
     </View>
   );
   return null;

@@ -29,5 +29,7 @@ export interface ContentBlock {
   // audio - audioFile stores just the PB filename
   audioFile?: string;
   audioLabel?: string;
+  // caption/hint shown below image, audio, or table blocks
+  caption?: string;
   collapsed?: boolean;
 }
