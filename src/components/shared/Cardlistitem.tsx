@@ -53,7 +53,6 @@ export const CardListItem: React.FC<Props> = ({
     <View style={ci.body}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
         <Text style={[ci.front, { flex: 1 }]} numberOfLines={1}>{front || '(image only)'}</Text>
-        {!selecting && isHidden && <Text style={{ fontSize: 10 }}>🙈</Text>}
       </View>
       {back ? <Text style={ci.back} numberOfLines={1}>{back}</Text> : null}
     </View>

@@ -182,11 +182,7 @@ export const AudioPlayer: React.FC<Props> = ({ uri, accentColor = Colors.accent 
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   };
 
-  const icon = status === 'playing' ? '⏸' : '▶';
-  // Freeze color at mount — prevents button changing color when parent re-renders
-  // with a different accentColor (e.g. card flip switches front→back color)
-  const colorRef = useRef(accentColor);
-  const color = colorRef.current;
+  const color = accentColor;
 
   return (
     <View style={[ap.wrap, { borderColor: color + '33', backgroundColor: color + '0A' }]}>
@@ -194,11 +190,16 @@ export const AudioPlayer: React.FC<Props> = ({ uri, accentColor = Colors.accent 
         {/* Play / pause — consistent style regardless of state */}
         <Pressable
           onPress={handlePress}
-          style={[ap.btn, { backgroundColor: color + '22', borderColor: color + '44' }]}
+          style={[ap.btn, { backgroundColor: color + '22', borderColor: color + '66' }]}
         >
           {status === 'loading'
             ? <ActivityIndicator size="small" color={color} />
-            : <Text style={[ap.btnIcon, { color }]}>{icon}</Text>
+            : status === 'playing'
+              ? <View style={ap.pauseIcon}>
+                  <View style={[ap.pauseBar, { backgroundColor: color }]} />
+                  <View style={[ap.pauseBar, { backgroundColor: color }]} />
+                </View>
+              : <Text style={[ap.btnIcon, { color }]}>{'▶'}</Text>
           }
         </Pressable>
 
@@ -230,6 +231,8 @@ const ap = StyleSheet.create({
   row:         { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   btn:         { width: 28, height: 28, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   btnIcon:     { fontSize: 11, fontWeight: '700' },
+  pauseIcon:   { flexDirection: 'row', gap: 3, alignItems: 'center', justifyContent: 'center' },
+  pauseBar:    { width: 3, height: 11, borderRadius: 1.5 },
   middle:      { flex: 1, gap: 3 },
   trackHitArea:{ height: 20, justifyContent: 'center' },
   track:       { height: 3, borderRadius: 2, overflow: 'visible', position: 'relative' },

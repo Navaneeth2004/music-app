@@ -17,6 +17,7 @@ import { InfoModal, InfoModalData }      from '../../../components/shared/Infomo
 import { ImportModal }                   from '../../../components/shared/ImportModal';
 import { getHidden, toggleHidden } from '../../../utils/hidden';
 import { ImageLightbox } from '../../../components/shared/ImageLightbox';
+import { AudioPlayer } from '../../../components/shared/AudioPlayer';
 
 
 interface Props { book: Book; onBack: () => void; }
@@ -353,6 +354,11 @@ const PreviewBlock: React.FC<{ block: ContentBlock }> = ({ block: b }) => {
     const uri = b.imageFile ?? b.imageUrl ?? null;
     if (!uri) return null;
     return <TappableImage uri={uri} />;
+  }
+  if (b.type === 'audio') {
+    const uri = b.audioFile ?? null;
+    if (!uri) return null;
+    return <View style={{ marginBottom: Spacing.md }}><AudioPlayer uri={uri} accentColor={Colors.accent} /></View>;
   }
   if (b.type === 'table') return (
     <View style={{ marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.md, overflow: 'hidden' }}>
