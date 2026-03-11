@@ -11,6 +11,7 @@ import { pickAudio, PickedAudio } from '../../../utils/pickAudio';
 import { MediaChooserModal } from '../../../components/shared/MediaChooserModal';
 import { ImagePickerModal } from '../../../components/shared/ImagePickerModal';
 import { AudioPlayer } from '../../../components/shared/AudioPlayer';
+import { AIGenerateScreen, AITarget } from '../../AIGenerateScreen';
 import { createChapterFlashcard, updateChapterFlashcard } from '../../../api/content';
 
 interface Props {
@@ -48,6 +49,8 @@ export const FlashcardFormScreen: React.FC<Props> = ({ chapter, book, editCard, 
   });
   const [frontAudioNew, setFrontAudioNew] = useState(false);
   const [backAudioNew,  setBackAudioNew]  = useState(false);
+  const [aiTarget,  setAiTarget]  = useState<AITarget | null>(null);
+  const [aiSide,    setAiSide]    = useState<'front' | 'back'>('front');
 
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState<string | null>(null);
@@ -104,6 +107,18 @@ export const FlashcardFormScreen: React.FC<Props> = ({ chapter, book, editCard, 
     } finally { setSaving(false); }
   };
 
+  if (aiTarget) return (
+    <AIGenerateScreen
+      target={aiTarget}
+      onBack={() => setAiTarget(null)}
+      onInsert={result => {
+        if (aiSide === 'front') setFront(result as string);
+        else setBack(result as string);
+        setAiTarget(null);
+      }}
+    />
+  );
+
   return (
     <SafeAreaView style={s.safe}>
       <MediaChooserModal
@@ -133,7 +148,10 @@ export const FlashcardFormScreen: React.FC<Props> = ({ chapter, book, editCard, 
 
         <SideCard accentColor={book.color} label="FRONT" hint="Question or term">
           <TextInput style={s.input} value={front} onChangeText={setFront} multiline
-            placeholder="Enter question or term… (required)" placeholderTextColor={Colors.textMuted} />
+            placeholder="Enter question or term… (required)" placeholderTextColor={Colors.textMuted} maxLength={1000} />
+          <Pressable onPress={() => { setAiSide('front'); setAiTarget({ type: 'flashcard', side: 'front' }); }} style={s.aiBtn}>
+            <Text style={s.aiBtnText}>✦  Generate with AI</Text>
+          </Pressable>
           <SideMedia
             img={frontImg} audio={frontAudio} accentColor={book.color}
             onAddMedia={() => openMedia('front')}
@@ -146,7 +164,10 @@ export const FlashcardFormScreen: React.FC<Props> = ({ chapter, book, editCard, 
 
         <SideCard accentColor={Colors.accent} label="BACK" hint="Answer or definition">
           <TextInput style={s.input} value={back} onChangeText={setBack} multiline
-            placeholder="Enter answer or definition… (required)" placeholderTextColor={Colors.textMuted} />
+            placeholder="Enter answer or definition… (required)" placeholderTextColor={Colors.textMuted} maxLength={1000} />
+          <Pressable onPress={() => { setAiSide('back'); setAiTarget({ type: 'flashcard', side: 'back', otherSide: front }); }} style={s.aiBtn}>
+            <Text style={s.aiBtnText}>✦  Generate with AI</Text>
+          </Pressable>
           <SideMedia
             img={backImg} audio={backAudio} accentColor={Colors.accent}
             onAddMedia={() => openMedia('back')}
@@ -240,4 +261,6 @@ const s = StyleSheet.create({
   addMediaIcon:    { fontSize: 16, color: Colors.textSecondary },
   addMediaText:    { flex: 1, color: Colors.textSecondary, fontSize: FontSize.sm, fontWeight: '600' },
   addMediaHint:    { color: Colors.textMuted, fontSize: FontSize.xs },
+  aiBtn:           { backgroundColor: Colors.accent + '18', borderRadius: Radius.sm, borderWidth: 1, borderColor: Colors.accent + '44', paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center', marginTop: 6 },
+  aiBtnText:       { color: Colors.accentLight, fontSize: FontSize.sm, fontWeight: '700' },
 });

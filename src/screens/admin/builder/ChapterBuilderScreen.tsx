@@ -16,7 +16,9 @@ import { ExportNameModal, ExportPrompt } from '../../../components/shared/Export
 import { InfoModal, InfoModalData }      from '../../../components/shared/Infomodal';
 import { ImportModal }                   from '../../../components/shared/ImportModal';
 import { getHidden, toggleHidden } from '../../../utils/hidden';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlockPreview } from '../../../components/shared/Blockpreview';
+import { BackButton } from '../../../components/shared/Backbutton';
 
 
 interface Props { book: Book; onBack: () => void; }
@@ -25,6 +27,7 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
   const [chapters, setChapters]         = useState<Chapter[]>([]);
   const [loading, setLoading]           = useState(true);
   const [saving, setSaving]             = useState(false);
+  const [editLoading, setEditLoading]   = useState<string | null>(null);
   const [showForm, setShowForm]         = useState(false);
   const [title, setTitle]               = useState('');
   const [subtitle, setSubtitle]         = useState('');
@@ -39,6 +42,8 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
   const [infoModal, setInfoModal]       = useState<InfoModalData | null>(null);
   const [showImport, setShowImport]     = useState(false);
   const [hidden, setHidden]             = useState<Set<string>>(new Set());
+  // Track which chapters have local drafts saved in AsyncStorage
+  const [draftedIds, setDraftedIds]     = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -47,6 +52,19 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
     finally { setLoading(false); }
   }, [book.id]);
   useEffect(() => { load(); }, [load]);
+
+  // After chapters load, check which have local drafts
+  useEffect(() => {
+    if (!chapters.length) return;
+    Promise.all(
+      chapters.map(async ch => {
+        try {
+          const val = await AsyncStorage.getItem(`block_draft_${ch.id}`);
+          return val ? ch.id : null;
+        } catch { return null; }
+      })
+    ).then(ids => setDraftedIds(new Set(ids.filter(Boolean) as string[])));
+  }, [chapters]);
 
   // Called by ImportModal with already-validated + type-checked data
   const handleImport = async (data: any) => {
@@ -63,11 +81,10 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
         try {
           let blocks = JSON.parse(ch.content);
           if (Object.keys(uriMap).length) {
-            blocks = blocks.map((bl: any) => ({
-              ...bl,
-              imageFile: remapUri(bl.imageFile, 'images', uriMap),
-              audioFile: remapUri(bl.audioFile, 'audio',  uriMap),
-            }));
+            blocks = blocks.map((bl: any) => {
+              const { imageFile: _img, audioFile: _aud, ...rest } = bl;
+              return { ...rest, imageFile: remapUri(bl.imageFile, 'images', uriMap), audioFile: remapUri(bl.audioFile, 'audio', uriMap) };
+            });
           }
           await updateChapter(chapter.id, { content: JSON.stringify(blocks) } as any);
         } catch {}
@@ -116,11 +133,14 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
 
         let blocks: any[] = [];
         try { blocks = (ch as any).content ? JSON.parse((ch as any).content) : []; } catch {}
-        const exportBlocks = await Promise.all(blocks.map(async (bl: any) => ({
-          ...bl,
-          imageFile: await embedMedia(bl.imageFile, 'images', media),
-          audioFile: await embedMedia(bl.audioFile, 'audio',  media),
-        })));
+        const exportBlocks = await Promise.all(blocks.map(async (bl: any) => {
+          const { imageFile: _img, audioFile: _aud, ...rest } = bl;
+          return {
+            ...rest,
+            imageFile: await embedMedia(bl.imageFile, 'images', media),
+            audioFile: await embedMedia(bl.audioFile, 'audio',  media),
+          };
+        }));
 
         const exportCards = await Promise.all(cards.map(async c => ({
           front: c.front, back: c.back,
@@ -171,9 +191,10 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
   return (
     <SafeAreaView style={s.safe}>
       <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
-        <Pressable onPress={selecting ? cancelSelect : onBack} style={s.back}>
-          <Text style={s.backText}>{selecting ? '✕ Cancel' : '← Textbooks'}</Text>
-        </Pressable>
+        {selecting
+          ? <Pressable onPress={cancelSelect} style={s.back}><Text style={s.cancelText}>✕ Cancel</Text></Pressable>
+          : <BackButton onPress={onBack} label="Textbooks" />
+        }
 
         <View style={s.heroRow}>
           <View style={[s.cover, { backgroundColor: book.color }]}>
@@ -188,7 +209,7 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
         {error && <View style={s.err}><Text style={s.errText}>{error}</Text></View>}
 
         {!loading && !selecting && (
-          <Text style={s.hint}>long-press to export · swipe ← delete · swipe → hide</Text>
+          <Text style={s.hint}>long-press to export · swipe ← delete</Text>
         )}
 
         {selecting && (
@@ -196,6 +217,11 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
             count={selected.size} total={chapters.length}
             accentColor={book.color} allSelected={allSelected}
             onSelectAll={() => setSelected(allSelected ? new Set() : new Set(chapters.map(c => c.id)))}
+            onHide={async () => {
+              for (const id of selected) await toggleHidden('chapter', id);
+              setHidden(await getHidden('chapter'));
+              cancelSelect();
+            }}
             onExport={handleExportSelected}
           />
         )}
@@ -204,9 +230,17 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
           ? <ActivityIndicator color={Colors.accent} style={{ marginTop: Spacing.xl }} />
           : <>
               {chapters.map(ch => (
-                <SwipeableRow key={ch.id} onDelete={() => setDeleteTarget(ch)} onHide={() => handleToggleHide(ch.id)} isHidden={hidden.has(ch.id)} containerStyle={{ marginBottom: Spacing.sm, borderRadius: Radius.md }}>
+                <SwipeableRow key={ch.id} onDelete={() => setDeleteTarget(ch)} containerStyle={{ marginBottom: Spacing.sm, borderRadius: Radius.md }}>
                   <Pressable
-                    onPress={() => selecting ? toggleSelect(ch.id) : setView({ screen: 'preview', chapter: ch })}
+                    onPress={async () => {
+                      if (selecting) { toggleSelect(ch.id); }
+                      else {
+                        setEditLoading(ch.id);
+                        await new Promise(r => setTimeout(r, 400));
+                        setView({ screen: 'preview', chapter: ch });
+                        setEditLoading(null);
+                      }
+                    }}
                     onLongPress={() => { if (!selecting) { setSelecting(true); setSelected(new Set([ch.id])); } }}
                     delayLongPress={350}
                     style={({ pressed }) => [
@@ -214,7 +248,9 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
                       pressed && { opacity: 0.75 },
                       !selecting && hidden.has(ch.id) && { opacity: 0.45 },
                       selecting && selected.has(ch.id) && { borderColor: book.color, backgroundColor: book.color + '12' },
+                      editLoading === ch.id && { opacity: 0.6 },
                     ]}
+                    disabled={editLoading === ch.id}
                   >
                     {selecting ? (
                       <View style={[s.check, selected.has(ch.id) && { backgroundColor: book.color, borderColor: book.color }]}>
@@ -222,13 +258,19 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
                       </View>
                     ) : (
                       <View style={[s.num, { borderColor: book.color + '55' }]}>
-                        <Text style={[s.numText, { color: book.color }]}>{ch.number}</Text>
+                        {editLoading === ch.id ? (
+                          <ActivityIndicator size="small" color={book.color} />
+                        ) : (
+                          <Text style={[s.numText, { color: book.color }]}>{ch.number}</Text>
+                        )}
                       </View>
                     )}
                     <View style={s.meta}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Text style={s.chTitle}>{ch.title}</Text>
-                        {!selecting && hidden.has(ch.id) && <Text style={{ fontSize: 11 }}>🙈</Text>}
+                        {draftedIds.has(ch.id) && (
+                          <View style={s.draftPill}><Text style={s.draftPillText}>DRAFT</Text></View>
+                        )}
                       </View>
                       {ch.subtitle ? <Text style={s.chSub}>{ch.subtitle}</Text> : null}
                     </View>
@@ -237,7 +279,7 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
                 </SwipeableRow>
               ))}
 
-              {!showForm
+              {!selecting && (!showForm
                 ? <View style={s.addRow}>
                     <Pressable onPress={() => setShowForm(true)} style={s.addBtn}>
                       <Text style={s.addBtnText}>+ Add Chapter</Text>
@@ -263,7 +305,7 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
                       </Pressable>
                     </View>
                   </View>
-              }
+              )}
             </>
         }
       </ScrollView>
@@ -287,13 +329,25 @@ export const ChapterBuilderScreen: React.FC<Props> = ({ book, onBack }) => {
 
 // ─── Inline chapter preview (admin side) ──────────────────────
 const ChapterPreviewScreen: React.FC<{ chapter: Chapter; book: Book; onEdit: () => void; onBack: () => void }> = ({ chapter, book, onEdit, onBack }) => {
-  const blocks: ContentBlock[] = (() => {
+  const [draftBlocks, setDraftBlocks] = React.useState<ContentBlock[] | null>(null);
+  const [editLoading, setEditLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    AsyncStorage.getItem(`block_draft_${chapter.id}`).then(raw => {
+      if (raw) setDraftBlocks(JSON.parse(raw));
+    }).catch(() => {});
+  }, [chapter.id]);
+
+  const dbBlocks: ContentBlock[] = (() => {
     try {
       const raw = (chapter as any).content;
       if (!raw) return [];
       return typeof raw === 'string' ? JSON.parse(raw) : raw;
     } catch { return []; }
   })();
+
+  const hasDraft = draftBlocks !== null;
+  const blocks = hasDraft ? draftBlocks! : dbBlocks;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: Colors.background }}>
@@ -307,11 +361,34 @@ const ChapterPreviewScreen: React.FC<{ chapter: Chapter; book: Book; onEdit: () 
               <Text style={{ color: book.color, fontSize: 11, fontWeight: '800', letterSpacing: 1 }}>CHAPTER {chapter.number}</Text>
             </View>
           </View>
-          <Pressable onPress={onEdit}
-            style={{ backgroundColor: book.color + '22', borderRadius: Radius.md, paddingVertical: 6, paddingHorizontal: Spacing.md, borderWidth: 1, borderColor: book.color + '55' }}>
-            <Text style={{ color: book.color, fontWeight: '700', fontSize: FontSize.sm }}>✏️ Edit</Text>
+          <Pressable
+            onPress={async () => {
+              setEditLoading(true);
+              await new Promise(r => setTimeout(r, 400));
+              onEdit();
+              setEditLoading(false);
+            }}
+            disabled={editLoading}
+            style={{ backgroundColor: editLoading ? book.color + '88' : book.color + '22', borderRadius: Radius.md, paddingVertical: 6, paddingHorizontal: Spacing.md, borderWidth: 1, borderColor: book.color + '55' }}>
+            {editLoading ? (
+              <ActivityIndicator size="small" color={book.color} />
+            ) : (
+              <Text style={{ color: book.color, fontWeight: '700', fontSize: FontSize.sm }}>✏️ Edit</Text>
+            )}
           </Pressable>
         </View>
+
+        {/* Draft banner */}
+        {hasDraft && (
+          <View style={{ backgroundColor: Colors.warning + '18', borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.warning + '55', padding: Spacing.sm, marginBottom: Spacing.md, flexDirection: 'row', alignItems: 'center', gap: Spacing.xs }}>
+            <Text style={{ fontSize: 14 }}>📝</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: Colors.warning, fontSize: FontSize.xs, fontWeight: '800', letterSpacing: 0.5 }}>DRAFT PREVIEW</Text>
+              <Text style={{ color: Colors.textMuted, fontSize: 11, marginTop: 1 }}>Showing unsaved draft. Press Edit → Save to publish.</Text>
+            </View>
+          </View>
+        )}
+
         <Text style={{ fontSize: FontSize.xxl, fontWeight: '800', color: Colors.textPrimary, marginBottom: Spacing.xs }}>{chapter.title}</Text>
         {chapter.subtitle ? <Text style={{ fontSize: FontSize.md, color: Colors.textSecondary, marginBottom: Spacing.lg }}>{chapter.subtitle}</Text> : null}
         {blocks.length === 0
@@ -347,6 +424,8 @@ const s = StyleSheet.create({
   meta:     { flex: 1 },
   chTitle:  { fontSize: FontSize.md, fontWeight: '600', color: Colors.textPrimary },
   chSub:    { fontSize: FontSize.xs, color: Colors.textMuted, marginTop: 2 },
+  draftPill:     { backgroundColor: Colors.warning + '28', borderRadius: 999, paddingHorizontal: 6, paddingVertical: 1, borderWidth: 1, borderColor: Colors.warning + '55' },
+  draftPillText: { color: Colors.warning, fontSize: 9, fontWeight: '800', letterSpacing: 0.8 },
   chevron:  { color: Colors.textMuted, fontSize: 20 },
 
   addRow:     { marginTop: Spacing.md, gap: Spacing.sm },

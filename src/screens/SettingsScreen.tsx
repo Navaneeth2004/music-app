@@ -7,24 +7,29 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, FontSize, Spacing, Radius } from '../constants/theme';
 import { User } from '../types';
 import { BackupScreen } from './BackupScreen';
+import { AISettingsScreen } from './AISettingsScreen';
 import { SuperAdminScreen } from './Superadminscreen';
 import { useAuth } from '../context/AuthContext';
 
 interface Props {
+  openAISettings?: number;
   user:     User;
   onLogout: () => void;
   isAdmin?: boolean;
 }
 
-export const SettingsScreen: React.FC<Props> = ({ user, onLogout, isAdmin }) => {
+export const SettingsScreen: React.FC<Props> = ({ user, onLogout, isAdmin, openAISettings }) => {
   const { unlockAdmin, lockAdmin } = useAuth();
   const [showBackup,      setShowBackup]      = useState(false);
   const [showSuperAdmin,  setShowSuperAdmin]  = useState(false);
+  const [showAI,          setShowAI]          = useState(false);
+  React.useEffect(() => { if (openAISettings) setShowAI(true); }, [openAISettings]);  // fires on each tick change
   const [showAdminModal,  setShowAdminModal]  = useState(false);
   const [password,        setPassword]        = useState('');
   const [unlocking,       setUnlocking]       = useState(false);
   const [unlockError,     setUnlockError]     = useState('');
 
+  if (showAI)        return <AISettingsScreen onBack={() => setShowAI(false)} />;
   if (showBackup)    return <BackupScreen     onBack={() => setShowBackup(false)} />;
   if (showSuperAdmin) return <SuperAdminScreen onBack={() => setShowSuperAdmin(false)} />;
 
@@ -81,6 +86,14 @@ export const SettingsScreen: React.FC<Props> = ({ user, onLogout, isAdmin }) => 
             <Text style={s.rowLabel}>Backup & Restore</Text>
             <Text style={s.chevron}>›</Text>
           </Pressable>
+          {isAdmin && (
+            <><Div />
+            <Pressable onPress={() => setShowAI(true)} style={({ pressed }) => [s.row, pressed && { opacity: 0.7 }]}>
+              <Text style={s.rowIcon}>🤖</Text>
+              <Text style={s.rowLabel}>AI Settings</Text>
+              <Text style={s.chevron}>›</Text>
+            </Pressable></>
+          )}
         </View>
 
         {/* Admin switch — available to all users */}

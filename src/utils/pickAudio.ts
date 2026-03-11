@@ -42,7 +42,6 @@ const pickAudioFromWeb = (): Promise<PickedAudio | null> =>
 
 // ─── Native ───────────────────────────────────────────────────
 const pickAudioNative = async (): Promise<PickedAudio | null> => {
-  // Prevent concurrent picker calls
   if (isPickingAudio) {
     console.warn('Audio picker already in progress');
     return null;
@@ -57,6 +56,24 @@ const pickAudioNative = async (): Promise<PickedAudio | null> => {
     });
     if (result.canceled || !result.assets?.[0]) return null;
     const asset = result.assets[0];
+
+    // Copy to app documentDirectory so the audio persists even if cache is cleared
+    try {
+      const FS = await import('expo-file-system') as any;
+      const docDir = FS.documentDirectory || FS.Paths?.documentDirectory;
+      const ext = (asset.mimeType ?? 'audio/mpeg').split('/')[1] ?? 'mp3';
+      const dest = `${docDir}audio/aud_${Date.now()}.${ext}`;
+      await FS.makeDirectoryAsync(`${docDir}audio`, { intermediates: true }).catch(() => {});
+      await FS.copyAsync({ from: asset.uri, to: dest });
+      return {
+        uri: dest,
+        fileName: asset.name,
+        mimeType: asset.mimeType || 'audio/mpeg',
+      };
+    } catch {
+      // fallback to cache URI if copy fails
+    }
+
     return {
       uri: asset.uri,
       fileName: asset.name,

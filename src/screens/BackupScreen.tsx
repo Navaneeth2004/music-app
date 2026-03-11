@@ -1,27 +1,3 @@
-/**
- * BackupScreen.tsx
- *
- * Full backup/restore for the study app.
- *
- * Export format (v2):
- * {
- *   version: 2,
- *   exportedAt: string,
- *   favourites: { books: string[], decks: string[] },
- *   books: [...],
- *   soloDecks: [...],
- *   media: { "images/foo.jpg": "<base64>", "audio/bar.m4a": "<base64>" }
- * }
- *
- * Media is embedded as base64 inside the JSON.
- * v1 backups (text-only, no media) are still importable.
- *
- * Per-item exports (book / chapter / deck) also use v2 format with media
- * embedded — see BookBuilderScreen, ChapterBuilderScreen, SoloDeckBuilderScreen.
- *
- * Uses expo-file-system "next" API: { File, Paths, Directory }
- */
-
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -29,6 +5,7 @@ import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import { Colors, FontSize, Spacing, Radius } from '../constants/theme';
+import { BackButton } from '../components/shared/Backbutton';
 import {
   getBooks, getChapters, getChapterFlashcards,
   getSoloDecks, getSoloFlashcards,
@@ -77,11 +54,14 @@ export const BackupScreen: React.FC<Props> = ({ onBack }) => {
           // Remap block media
           let blocks: any[] = [];
           try { blocks = ch.content ? JSON.parse(ch.content) : []; } catch {}
-          const exportBlocks = await Promise.all(blocks.map(async (bl: any) => ({
-            ...bl,
-            imageFile: await embedMedia(bl.imageFile, 'images', media),
-            audioFile: await embedMedia(bl.audioFile, 'audio',  media),
-          })));
+          const exportBlocks = await Promise.all(blocks.map(async (bl: any) => {
+            const { imageFile: _img, audioFile: _aud, ...rest } = bl;
+            return {
+              ...rest,
+              imageFile: await embedMedia(bl.imageFile, 'images', media),
+              audioFile: await embedMedia(bl.audioFile, 'audio',  media),
+            };
+          }));
 
           const exportCards = await Promise.all(cards.map(async c => ({
             front: c.front, back: c.back,
@@ -204,11 +184,10 @@ export const BackupScreen: React.FC<Props> = ({ onBack }) => {
           if (ch.content) {
             let blocks: any[] = [];
             try { blocks = JSON.parse(ch.content); } catch {}
-            const remapped = blocks.map((bl: any) => ({
-              ...bl,
-              imageFile: remapUri(bl.imageFile, 'images', uriMap),
-              audioFile: remapUri(bl.audioFile, 'audio',  uriMap),
-            }));
+            const remapped = blocks.map((bl: any) => {
+              const { imageFile: _img, audioFile: _aud, ...rest } = bl;
+              return { ...rest, imageFile: remapUri(bl.imageFile, 'images', uriMap), audioFile: remapUri(bl.audioFile, 'audio', uriMap) };
+            });
             await updateChapter(chapter.id, { content: JSON.stringify(remapped) } as any);
           }
           for (const card of (ch.flashcards ?? [])) {
@@ -241,11 +220,10 @@ export const BackupScreen: React.FC<Props> = ({ onBack }) => {
         if (data.chapter.content) {
           let blocks: any[] = [];
           try { blocks = JSON.parse(data.chapter.content); } catch {}
-          const remapped = blocks.map((bl: any) => ({
-            ...bl,
-            imageFile: remapUri(bl.imageFile, 'images', uriMap),
-            audioFile: remapUri(bl.audioFile, 'audio',  uriMap),
-          }));
+          const remapped = blocks.map((bl: any) => {
+            const { imageFile: _img, audioFile: _aud, ...rest } = bl;
+            return { ...rest, imageFile: remapUri(bl.imageFile, 'images', uriMap), audioFile: remapUri(bl.audioFile, 'audio', uriMap) };
+          });
           await updateChapter(chapter.id, { content: JSON.stringify(remapped) } as any);
         }
         for (const card of (data.chapter.flashcards ?? [])) {
@@ -292,11 +270,10 @@ export const BackupScreen: React.FC<Props> = ({ onBack }) => {
             if (ch.content) {
               let blocks: any[] = [];
               try { blocks = JSON.parse(ch.content); } catch {}
-              const remapped = blocks.map((bl: any) => ({
-                ...bl,
-                imageFile: remapUri(bl.imageFile, 'images', uriMap),
-                audioFile: remapUri(bl.audioFile, 'audio',  uriMap),
-              }));
+              const remapped = blocks.map((bl: any) => {
+                const { imageFile: _img, audioFile: _aud, ...rest } = bl;
+                return { ...rest, imageFile: remapUri(bl.imageFile, 'images', uriMap), audioFile: remapUri(bl.audioFile, 'audio', uriMap) };
+              });
               await updateChapter(chapter.id, { content: JSON.stringify(remapped) } as any);
             }
             for (const card of (ch.flashcards ?? [])) {
@@ -380,9 +357,7 @@ export const BackupScreen: React.FC<Props> = ({ onBack }) => {
   return (
     <SafeAreaView style={st.safe}>
       <ScrollView contentContainerStyle={st.content} showsVerticalScrollIndicator={false}>
-        <Pressable onPress={onBack} style={st.back}>
-          <Text style={st.backText}>← Settings</Text>
-        </Pressable>
+        <BackButton onPress={onBack} label="Settings" />
         <Text style={st.title}>Backup & Restore</Text>
         <Text style={st.subtitle}>Export all content and media, or restore a previous backup.</Text>
 

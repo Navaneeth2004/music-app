@@ -3,6 +3,7 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { AuthProvider, useAuth } from '@src/context/AuthContext';
+import { NavigationProvider } from '@src/context/Navigationcontext';
 import { Colors } from '@src/constants/theme';
 import { View } from 'react-native';
 
@@ -64,8 +65,10 @@ function RootLayoutInner() {
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <RootLayoutInner />
-    </AuthProvider>
+    <NavigationProvider>
+      <AuthProvider>
+        <RootLayoutInner />
+      </AuthProvider>
+    </NavigationProvider>
   );
 }

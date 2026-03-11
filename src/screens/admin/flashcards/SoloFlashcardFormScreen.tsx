@@ -11,6 +11,7 @@ import { pickAudio, PickedAudio } from '../../../utils/pickAudio';
 import { MediaChooserModal } from '../../../components/shared/MediaChooserModal';
 import { ImagePickerModal } from '../../../components/shared/ImagePickerModal';
 import { AudioPlayer } from '../../../components/shared/AudioPlayer';
+import { AIGenerateScreen, AITarget } from '../../AIGenerateScreen';
 import { createSoloFlashcard, updateSoloFlashcard } from '../../../api/content';
 
 interface Props {
@@ -46,8 +47,11 @@ export const SoloFlashcardFormScreen: React.FC<Props> = ({ deck, editCard, onSav
   });
   const [frontAudioNew, setFrontAudioNew] = useState(false);
   const [backAudioNew,  setBackAudioNew]  = useState(false);
+  const [aiTarget,  setAiTarget]  = useState<AITarget | null>(null);
+  const [aiSide,    setAiSide]    = useState<'front' | 'back'>('front');
 
   const [saving, setSaving] = useState(false);
+  const [backLoading, setBackLoading] = useState(false);
   const [error,  setError]  = useState<string | null>(null);
   const [modal,  setModal]  = useState<ModalState>({ type: 'none' });
 
@@ -103,6 +107,18 @@ export const SoloFlashcardFormScreen: React.FC<Props> = ({ deck, editCard, onSav
   const accentFront = deck.color;
   const accentBack  = '#38BFA1';
 
+  if (aiTarget) return (
+    <AIGenerateScreen
+      target={aiTarget}
+      onBack={() => setAiTarget(null)}
+      onInsert={result => {
+        if (aiSide === 'front') setFront(result as string);
+        else setBack(result as string);
+        setAiTarget(null);
+      }}
+    />
+  );
+
   return (
     <SafeAreaView style={s.safe}>
       <MediaChooserModal
@@ -118,8 +134,20 @@ export const SoloFlashcardFormScreen: React.FC<Props> = ({ deck, editCard, onSav
       />
 
       <View style={s.header}>
-        <Pressable onPress={onBack} style={s.backBtn}>
-          <Text style={s.backText}>← {editCard ? 'Cancel' : 'Back'}</Text>
+        <Pressable
+          onPress={async () => {
+            setBackLoading(true);
+            await new Promise(r => setTimeout(r, 300));
+            onBack();
+          }}
+          disabled={backLoading}
+          style={s.backBtn}
+        >
+          {backLoading ? (
+            <ActivityIndicator size="small" color={Colors.accentLight} />
+          ) : (
+            <Text style={s.backText}>← {editCard ? 'Cancel' : 'Back'}</Text>
+          )}
         </Pressable>
         <View style={[s.deckBadge, { backgroundColor: deck.color + '22' }]}>
           <Text style={{ fontSize: 14 }}>{deck.icon}</Text>
@@ -135,7 +163,10 @@ export const SoloFlashcardFormScreen: React.FC<Props> = ({ deck, editCard, onSav
 
         <SideCard accentColor={accentFront} label="FRONT" hint="Question or term">
           <TextInput style={s.input} value={front} onChangeText={setFront} multiline
-            placeholder="Enter question or term… (required)" placeholderTextColor={Colors.textMuted} />
+            placeholder="Enter question or term… (required)" placeholderTextColor={Colors.textMuted} maxLength={1000} />
+          <Pressable onPress={() => { setAiSide('front'); setAiTarget({ type: 'flashcard', side: 'front' }); }} style={s.aiBtn}>
+            <Text style={s.aiBtnText}>✦  Generate with AI</Text>
+          </Pressable>
           <SideMedia
             img={frontImg} audio={frontAudio} accentColor={accentFront}
             onAddMedia={() => openMedia('front')}
@@ -148,7 +179,10 @@ export const SoloFlashcardFormScreen: React.FC<Props> = ({ deck, editCard, onSav
 
         <SideCard accentColor={accentBack} label="BACK" hint="Answer or definition">
           <TextInput style={s.input} value={back} onChangeText={setBack} multiline
-            placeholder="Enter answer or definition… (required)" placeholderTextColor={Colors.textMuted} />
+            placeholder="Enter answer or definition… (required)" placeholderTextColor={Colors.textMuted} maxLength={1000} />
+          <Pressable onPress={() => { setAiSide('back'); setAiTarget({ type: 'flashcard', side: 'back', otherSide: front }); }} style={s.aiBtn}>
+            <Text style={s.aiBtnText}>✦  Generate with AI</Text>
+          </Pressable>
           <SideMedia
             img={backImg} audio={backAudio} accentColor={accentBack}
             onAddMedia={() => openMedia('back')}
@@ -243,4 +277,6 @@ const s = StyleSheet.create({
   addMediaIcon:    { fontSize: 16, color: Colors.textSecondary },
   addMediaText:    { flex: 1, color: Colors.textSecondary, fontSize: FontSize.sm, fontWeight: '600' },
   addMediaHint:    { color: Colors.textMuted, fontSize: FontSize.xs },
+  aiBtn:           { backgroundColor: Colors.accent + '18', borderRadius: Radius.sm, borderWidth: 1, borderColor: Colors.accent + '44', paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center', marginTop: 6 },
+  aiBtnText:       { color: Colors.accentLight, fontSize: FontSize.sm, fontWeight: '700' },
 });

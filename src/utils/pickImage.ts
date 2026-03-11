@@ -39,6 +39,23 @@ export const pickImageNative = async (fromCamera: boolean): Promise<PickedImage 
         });
     if (result.canceled || !result.assets?.[0]) return null;
     const a = result.assets[0];
+    // Copy to app document directory so the image persists even if deleted from gallery
+    try {
+      const FS = await import('expo-file-system') as any;
+      const docDir = FS.documentDirectory || FS.Paths?.documentDirectory;
+      const ext = (a.mimeType ?? 'image/jpeg').split('/')[1] ?? 'jpg';
+      const dest = `${docDir}images/img_${Date.now()}.${ext}`;
+      // ensure folder exists
+      await FS.makeDirectoryAsync(`${docDir}images`, { intermediates: true }).catch(() => {});
+      await FS.copyAsync({ from: a.uri, to: dest });
+      return {
+        uri: dest,
+        mimeType: a.mimeType ?? 'image/jpeg',
+        fileName: a.fileName ?? `photo_${Date.now()}.jpg`,
+      };
+    } catch {
+      // fallback to original URI if copy fails
+    }
     return {
       uri: a.uri,
       mimeType: a.mimeType ?? 'image/jpeg',

@@ -1,17 +1,3 @@
-/**
- * SwipeableRow
- *
- * Swipe LEFT  past threshold → calls onDelete (snaps back, caller handles confirm).
- * Swipe RIGHT past threshold → calls onHide OR onRightAction, depending on which is provided.
- *
- * onHide      — original hide/show toggle (right swipe), shows hide emoji hint.
- * onRightAction — generic right-swipe action with custom label/color/icon.
- *
- * Only one of onHide / onRightAction should be provided. If both given, onRightAction wins.
- *
- * The animated card wrapper has backgroundColor: '#0A0A0F' (= Colors.background)
- * so it is fully opaque and the hint behind it never bleeds through.
- */
 import React, { useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Animated, PanResponder, View, Text, Dimensions } from 'react-native';
 
@@ -24,7 +10,7 @@ const CARD_BG = '#0A0A0F';
 export interface SwipeableRowHandle { reset: () => void; }
 
 interface Props {
-  onDelete:        () => void;
+  onDelete?:       () => void;
   // Original hide toggle
   onHide?:         () => void;
   isHidden?:       boolean;
@@ -70,7 +56,7 @@ export const SwipeableRow = forwardRef<SwipeableRowHandle, Props>(
         Animated.timing(tx, { toValue: -80, duration: 150, useNativeDriver: true }),
         Animated.spring(tx, { toValue: 0, useNativeDriver: true, tension: 200, friction: 20 }),
       ]).start(() => { triggered.current = false; });
-      onDelete();
+      if (onDelete) onDelete();
     }, [tx, onDelete, deleteDisabled]);
 
     const triggerRight = useCallback(() => {
@@ -98,13 +84,13 @@ export const SwipeableRow = forwardRef<SwipeableRowHandle, Props>(
 
         onPanResponderMove: (_, g) => {
           if (g.dx > 0 && !hasRight) return;
-          if (g.dx < 0 && deleteDisabled) return;
+          if (g.dx < 0 && (!onDelete || deleteDisabled)) return;
           tx.setValue(g.dx < 0 ? Math.min(0, g.dx) : Math.max(0, g.dx));
         },
 
         onPanResponderRelease: (_, g) => {
           tx.flattenOffset();
-          if (!deleteDisabled && (g.dx < -THRESHOLD || g.vx < -0.9)) {
+          if (onDelete && !deleteDisabled && (g.dx < -THRESHOLD || g.vx < -0.9)) {
             triggerDelete();
           } else if (hasRight && (g.dx > THRESHOLD || g.vx > 0.9)) {
             triggerRight();

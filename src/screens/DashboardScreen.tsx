@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Colors, FontSize, Spacing } from '../constants/theme';
 import { User } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { useNavigation } from '../context/Navigationcontext';
 import { BookPracticeScreen } from './bookpractice/BookPracticeScreen';
 import { SettingsScreen } from './SettingsScreen';
 import { StudyBuilderScreen } from './admin/StudyBuilderScreen';
@@ -18,6 +19,18 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onLogout
   const { isAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>(isAdmin ? 'builder' : 'practice');
   const [hideNav, setHideNav] = useState(false);
+  const [aiSettingsTick, setAiSettingsTick] = useState(0);
+  const { setHandler } = useNavigation();
+
+  useEffect(() => {
+    setHandler((action) => {
+      if (action === 'ai-settings') {
+        setActiveTab('settings');
+        setHideNav(false);
+        setAiSettingsTick(t => t + 1);
+      }
+    });
+  }, [setHandler]);
 
   useEffect(() => {
     setActiveTab(isAdmin ? 'builder' : 'practice');
@@ -49,7 +62,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onLogout
           />
         )}
         {activeTab === 'builder'  && <StudyBuilderScreen onDeepNav={setHideNav} />}
-        {activeTab === 'settings' && <SettingsScreen user={user} onLogout={onLogout} isAdmin={isAdmin} />}
+        {activeTab === 'settings' && <SettingsScreen user={user} onLogout={onLogout} isAdmin={isAdmin} openAISettings={aiSettingsTick} />}
       </View>
 
       {!hideNav && (

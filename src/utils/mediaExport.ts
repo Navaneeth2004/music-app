@@ -1,17 +1,7 @@
-/**
- * mediaExport.ts
- *
- * Helpers for embedding local media (images/audio) into export payloads
- * as base64 strings, and for restoring them on import.
- *
- * Uses expo-file-system "next" API: { File, Paths, Directory } from 'expo-file-system'
- * NOT the classic `import * as FileSystem` API.
- */
-
 import { File, Paths, Directory } from 'expo-file-system';
 
 /** Read a local URI as a base64 string. Returns null if the file can't be read. */
-export async function fileToBase64(uri: string | undefined): Promise<string | null> {
+export async function fileToBase64(uri: string | null | undefined): Promise<string | null> {
   if (!uri) return null;
   // Skip remote URLs — they're not local files we own
   if (uri.startsWith('http://') || uri.startsWith('https://')) return null;
@@ -34,7 +24,7 @@ export function basename(uri: string): string {
  * Returns the bare filename (stored in the record) or undefined.
  */
 export async function embedMedia(
-  uri: string | undefined,
+  uri: string | null | undefined,
   type: 'images' | 'audio',
   mediaMap: Record<string, string>,
 ): Promise<string | undefined> {
@@ -74,7 +64,7 @@ export async function restoreMediaMap(
 
 /** Remap a bare filename back to a local URI using the restored media map. */
 export function remapUri(
-  name: string | undefined,
+  name: string | null | undefined,
   type: 'images' | 'audio',
   uriMap: Record<string, string>,
 ): string | undefined {

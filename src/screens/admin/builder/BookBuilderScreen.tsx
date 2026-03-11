@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, FontSize, Spacing, Radius } from '../../../constants/theme';
 import { Book } from '../../../types';
@@ -14,6 +14,7 @@ import { ExportNameModal, ExportPrompt } from '../../../components/shared/Export
 import { InfoModal, InfoModalData }      from '../../../components/shared/Infomodal';
 import { ImportModal }                   from '../../../components/shared/ImportModal';
 import { getHidden, toggleHidden } from '../../../utils/hidden';
+import { BackButton } from '../../../components/shared/Backbutton';
 
 const COLORS = ['#7C6FF7','#4CAF88','#E05C6A','#F0A050','#4A9EE0','#C47ED4'];
 const ICONS  = ['🎼','🎹','🎸','🎺','🎻','🥁','🎵','🎶'];
@@ -24,6 +25,7 @@ export const BookBuilderScreen: React.FC<Props> = ({ onChapters, onBack }) => {
   const [books, setBooks]               = useState<Book[]>([]);
   const [loading, setLoading]           = useState(true);
   const [saving, setSaving]             = useState(false);
+  const [editLoading, setEditLoading]   = useState<string | null>(null);
   const [deleting, setDeleting]         = useState(false);
   const [showForm, setShowForm]         = useState(false);
   const [title, setTitle]               = useState('');
@@ -39,6 +41,11 @@ export const BookBuilderScreen: React.FC<Props> = ({ onChapters, onBack }) => {
   const [exportPrompt, setExportPrompt] = useState<ExportPrompt | null>(null);
   const [infoModal, setInfoModal]       = useState<InfoModalData | null>(null);
   const [hidden, setHidden]             = useState<Set<string>>(new Set());
+  // Edit modal state
+  const [editTarget,  setEditTarget]  = useState<Book | null>(null);
+  const [editTitle,   setEditTitle]   = useState('');
+  const [editAuthor,  setEditAuthor]  = useState('');
+  const [editSaving,  setEditSaving]  = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -64,11 +71,10 @@ export const BookBuilderScreen: React.FC<Props> = ({ onChapters, onBack }) => {
           try {
             let blocks = JSON.parse(ch.content);
             if (Object.keys(uriMap).length) {
-              blocks = blocks.map((bl: any) => ({
-                ...bl,
-                imageFile: remapUri(bl.imageFile, 'images', uriMap),
-                audioFile: remapUri(bl.audioFile, 'audio',  uriMap),
-              }));
+              blocks = blocks.map((bl: any) => {
+                const { imageFile: _img, audioFile: _aud, ...rest } = bl;
+                return { ...rest, imageFile: remapUri(bl.imageFile, 'images', uriMap), audioFile: remapUri(bl.audioFile, 'audio', uriMap) };
+              });
             }
             await updateChapter(chapter.id, { content: JSON.stringify(blocks) } as any);
           } catch {}
@@ -96,6 +102,27 @@ export const BookBuilderScreen: React.FC<Props> = ({ onChapters, onBack }) => {
   const handleToggleHide = async (id: string) => {
     await toggleHidden('book', id);
     setHidden(await getHidden('book'));
+  };
+
+  const handleHideSelected = async () => {
+    for (const id of selected) { await toggleHidden('book', id); }
+    setHidden(await getHidden('book'));
+    cancelSelect();
+  };
+
+  const openEdit = (book: Book) => {
+    setEditTarget(book); setEditTitle(book.title); setEditAuthor(book.author ?? '');
+  };
+
+  const handleEditSave = async () => {
+    if (!editTarget || !editTitle.trim()) return;
+    setEditSaving(true);
+    try {
+      await updateBook(editTarget.id, { title: editTitle.trim(), author: editAuthor.trim() } as any);
+      await load();
+      setEditTarget(null);
+    } catch {}
+    finally { setEditSaving(false); }
   };
 
   const handleCreate = async () => {
@@ -136,11 +163,14 @@ export const BookBuilderScreen: React.FC<Props> = ({ onChapters, onBack }) => {
 
           let blocks: any[] = [];
           try { blocks = ch.content ? JSON.parse(ch.content as any) : []; } catch {}
-          const exportBlocks = await Promise.all(blocks.map(async (bl: any) => ({
-            ...bl,
-            imageFile: await embedMedia(bl.imageFile, 'images', media),
-            audioFile: await embedMedia(bl.audioFile, 'audio',  media),
-          })));
+          const exportBlocks = await Promise.all(blocks.map(async (bl: any) => {
+            const { imageFile: _img, audioFile: _aud, ...rest } = bl;
+            return {
+              ...rest,
+              imageFile: await embedMedia(bl.imageFile, 'images', media),
+              audioFile: await embedMedia(bl.audioFile, 'audio',  media),
+            };
+          }));
 
           const exportCards = await Promise.all(cards.map(async c => ({
             front: c.front, back: c.back,
@@ -177,14 +207,15 @@ export const BookBuilderScreen: React.FC<Props> = ({ onChapters, onBack }) => {
   return (
     <SafeAreaView style={s.safe}>
       <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
-        <Pressable onPress={selecting ? cancelSelect : onBack} style={s.back}>
-          <Text style={s.backText}>{selecting ? '✕ Cancel' : '← Study Builder'}</Text>
-        </Pressable>
+        {selecting
+          ? <Pressable onPress={cancelSelect} style={s.back}><Text style={s.cancelText}>✕ Cancel</Text></Pressable>
+          : <BackButton onPress={onBack} label="Study Builder" />
+        }
         <Text style={s.title}>Textbooks</Text>
         {error && <View style={s.err}><Text style={s.errText}>{error}</Text></View>}
 
         {!loading && !selecting && (
-          <Text style={s.hint}>long-press to export  ·  swipe → hide  ·  swipe ← delete</Text>
+          <Text style={s.hint}>long-press to export  ·  swipe → edit  ·  swipe ← delete</Text>
         )}
 
         {selecting && (
@@ -192,22 +223,33 @@ export const BookBuilderScreen: React.FC<Props> = ({ onChapters, onBack }) => {
             count={selected.size} total={books.length}
             accentColor={Colors.accent} allSelected={allSelected}
             onSelectAll={() => setSelected(allSelected ? new Set() : new Set(books.map(b => b.id)))}
+            onHide={handleHideSelected}
             onExport={handleExportSelected}
           />
         )}
 
         {loading ? <ActivityIndicator color={Colors.accent} style={{ marginTop: Spacing.xl }} /> : <>
           {books.map(book => (
-            <SwipeableRow key={book.id} onDelete={() => setDeleteTarget(book)} onHide={() => handleToggleHide(book.id)} isHidden={hidden.has(book.id)} containerStyle={{ marginBottom: Spacing.sm, borderRadius: Radius.md }}>
+            <SwipeableRow key={book.id} onDelete={() => setDeleteTarget(book)} onRightAction={() => openEdit(book)} rightLabel="Edit" rightIcon="✏️" rightColor={Colors.accent} containerStyle={{ marginBottom: Spacing.sm, borderRadius: Radius.md }}>
               <Pressable
-                onPress={() => selecting ? toggleSelect(book.id) : onChapters(book)}
+                onPress={async () => {
+                  if (selecting) { toggleSelect(book.id); }
+                  else {
+                    setEditLoading(book.id);
+                    await new Promise(r => setTimeout(r, 400));
+                    onChapters(book);
+                    setEditLoading(null);
+                  }
+                }}
                 onLongPress={() => { if (!selecting) { setSelecting(true); setSelected(new Set([book.id])); } }}
                 delayLongPress={350}
                 style={({ pressed }) => [
                   s.bookCard, pressed && { opacity: 0.75 },
                   !selecting && hidden.has(book.id) && { opacity: 0.45 },
                   selecting && selected.has(book.id) && { borderColor: book.color, backgroundColor: book.color + '12' },
+                  editLoading === book.id && { opacity: 0.6 },
                 ]}
+                disabled={editLoading === book.id}
               >
                 {selecting ? (
                   <View style={[s.check, selected.has(book.id) && { backgroundColor: book.color, borderColor: book.color }]}>
@@ -215,13 +257,16 @@ export const BookBuilderScreen: React.FC<Props> = ({ onChapters, onBack }) => {
                   </View>
                 ) : (
                   <View style={[s.cover, { backgroundColor: book.color }]}>
-                    <Text style={{ fontSize: 22 }}>{book.icon}</Text>
+                    {editLoading === book.id ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={{ fontSize: 22 }}>{book.icon}</Text>
+                    )}
                   </View>
                 )}
                 <View style={s.meta}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     <Text style={s.bookTitle}>{book.title}</Text>
-                    {!selecting && hidden.has(book.id) && <Text style={{ fontSize: 11 }}>🙈</Text>}
                   </View>
                   <Text style={s.bookAuthor}>{book.author}</Text>
                 </View>
@@ -230,19 +275,19 @@ export const BookBuilderScreen: React.FC<Props> = ({ onChapters, onBack }) => {
             </SwipeableRow>
           ))}
 
-          {!showForm
+          {!selecting && !showForm
             ? <View style={s.addRow}>
                 <Pressable onPress={() => setShowForm(true)} style={s.addBtn}><Text style={s.addBtnText}>+ Add Book</Text></Pressable>
                 <Pressable onPress={() => setShowImport(true)} style={s.importBtn}>
                   <Text style={s.importBtnText}>⬇ Import</Text>
                 </Pressable>
               </View>
-            : <View style={s.form}>
+            : !selecting && <View style={s.form}>
                 <Text style={s.formTitle}>New Book</Text>
                 <Text style={s.label}>TITLE</Text>
-                <TextInput style={s.input} value={title} onChangeText={setTitle} placeholder="e.g. Harmony & Voice Leading" placeholderTextColor={Colors.textMuted} />
+                <TextInput style={s.input} value={title} onChangeText={setTitle} placeholder="e.g. Harmony & Voice Leading" placeholderTextColor={Colors.textMuted} maxLength={80} />
                 <Text style={s.label}>AUTHOR</Text>
-                <TextInput style={s.input} value={author} onChangeText={setAuthor} placeholder="e.g. Aldwell & Schachter" placeholderTextColor={Colors.textMuted} />
+                <TextInput style={s.input} value={author} onChangeText={setAuthor} placeholder="e.g. Aldwell & Schachter" placeholderTextColor={Colors.textMuted} maxLength={80} />
                 <Text style={s.label}>ICON</Text>
                 <View style={s.presets}>
                   {ICONS.map(ic => <Pressable key={ic} onPress={() => setIcon(ic)} style={[s.presetItem, icon === ic && s.presetActive]}><Text style={{ fontSize: 22 }}>{ic}</Text></Pressable>)}
@@ -262,6 +307,36 @@ export const BookBuilderScreen: React.FC<Props> = ({ onChapters, onBack }) => {
         </>}
       </ScrollView>
 
+      {/* Edit book modal */}
+      <Modal visible={!!editTarget} transparent animationType="fade">
+        <View style={s.overlay}>
+          <View style={s.editBox}>
+            <Text style={s.editBoxTitle}>Edit Book</Text>
+            <Text style={s.label}>TITLE</Text>
+            <TextInput
+              style={s.input} value={editTitle} onChangeText={setEditTitle}
+              placeholder="Book title" placeholderTextColor={Colors.textMuted}
+              maxLength={80} autoFocus
+            />
+            <Text style={s.label}>AUTHOR</Text>
+            <TextInput
+              style={s.input} value={editAuthor} onChangeText={setEditAuthor}
+              placeholder="Author" placeholderTextColor={Colors.textMuted}
+              maxLength={80}
+            />
+            <View style={s.formActions}>
+              <Pressable onPress={() => setEditTarget(null)} style={s.cancelBtn}>
+                <Text style={s.cancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable onPress={handleEditSave} disabled={!editTitle.trim() || editSaving}
+                style={[s.saveBtn, (!editTitle.trim() || editSaving) && { opacity: 0.4 }]}>
+                {editSaving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={s.saveBtnText}>Save</Text>}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <ConfirmModal
         visible={!!deleteTarget}
         title="Delete Book"
@@ -280,7 +355,7 @@ const s = StyleSheet.create({
   safe:     { flex: 1, backgroundColor: Colors.background },
   content:  { padding: Spacing.lg, paddingBottom: Spacing.xxl },
   back:     { marginBottom: Spacing.lg },
-  backText: { color: Colors.accentLight, fontSize: FontSize.md, fontWeight: '500' },
+  backText:   { color: Colors.accentLight, fontSize: FontSize.md, fontWeight: '500' },
   title:    { fontSize: FontSize.xxl, fontWeight: '800', color: Colors.textPrimary, letterSpacing: -0.5, marginBottom: Spacing.sm },
   hint:     { fontSize: 10, color: Colors.textMuted, fontStyle: 'italic', marginBottom: Spacing.sm },
   err:      { backgroundColor: Colors.error + '22', borderRadius: Radius.md, padding: Spacing.md, marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.error },
@@ -317,4 +392,7 @@ const s = StyleSheet.create({
   cancelText: { color: Colors.textSecondary, fontWeight: '600' },
   saveBtn:    { flex: 1, padding: Spacing.md, borderRadius: Radius.md, backgroundColor: Colors.accent, alignItems: 'center' },
   saveBtnText:{ color: Colors.textPrimary, fontWeight: '700' },
+  overlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', padding: Spacing.lg },
+  editBox:    { backgroundColor: Colors.surface, borderRadius: Radius.xl, borderWidth: 1, borderColor: Colors.border, padding: Spacing.lg, width: '100%', maxWidth: 380, gap: Spacing.sm },
+  editBoxTitle:{ fontSize: FontSize.lg, fontWeight: '800', color: Colors.textPrimary, marginBottom: Spacing.xs },
 });

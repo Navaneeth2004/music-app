@@ -16,6 +16,7 @@ import { exportJson }            from '../../../utils/exportJson';
 import { getHidden, toggleHidden } from '../../../utils/hidden';
 import { embedMedia }            from '../../../utils/mediaExport';
 import { ExportNameModal, ExportPrompt } from '../../../components/shared/Exportnamemodal';
+import { BackButton } from '../../../components/shared/Backbutton';
 
 const BACK_COLOR = Colors.accent;
 
@@ -25,6 +26,7 @@ interface Props { chapter: Chapter; book: Book; onBack: () => void; }
 export const FlashcardBuilderScreen: React.FC<Props> = ({ chapter, book, onBack }) => {
   const [cards, setCards]               = useState<Flashcard[]>([]);
   const [loading, setLoading]           = useState(true);
+  const [previewLoading, setPreviewLoading] = useState<string | null>(null);
   const [view, setView]                 = useState<View_>('list');
   const [previewCard, setPreviewCard]   = useState<Flashcard | null>(null);
   const [editCard, setEditCard]         = useState<Flashcard | null>(null);
@@ -71,9 +73,9 @@ export const FlashcardBuilderScreen: React.FC<Props> = ({ chapter, book, onBack 
       const exportCards = await Promise.all(chosen.map(async c => ({
         front: c.front, back: c.back,
         front_image: await embedMedia(c.front_image, 'images', media),
-        back_image:  await embedMedia(c.back_image,  'images', media),
+        back_image:  await embedMedia(c.back_image, 'images', media),
         front_audio: await embedMedia(c.front_audio, 'audio',  media),
-        back_audio:  await embedMedia(c.back_audio,  'audio',  media),
+        back_audio:  await embedMedia(c.back_audio, 'audio',  media),
       })));
       const payload = {
         version: 2, exportedAt: new Date().toISOString(), type: 'chapter_flashcards',
@@ -117,9 +119,7 @@ export const FlashcardBuilderScreen: React.FC<Props> = ({ chapter, book, onBack 
       <SafeAreaView style={s.safe}>
         <ImageLightbox uri={lightboxUri} onClose={() => setLightboxUri(null)} />
         <View style={s.previewHeader}>
-          <Pressable onPress={() => { setView('list'); setFlipped(false); }}>
-            <Text style={s.backText}>← Cards</Text>
-          </Pressable>
+          <BackButton onPress={() => { setView('list'); setFlipped(false); }} label="Cards" />
           <Pressable onPress={() => { setEditCard(previewCard); setView('edit'); }} style={s.editBtn}>
             <Text style={s.editBtnText}>Edit</Text>
           </Pressable>
@@ -162,6 +162,10 @@ export const FlashcardBuilderScreen: React.FC<Props> = ({ chapter, book, onBack 
           count={selected.size} total={cards.length}
           accentColor={book.color} allSelected={allSelected}
           onSelectAll={() => setSelected(allSelected ? new Set() : new Set(cards.map(c => c.id)))}
+          onHide={async () => {
+            for (const id of selected) await handleToggleHide(id);
+            cancelSelect();
+          }}
           onExport={handleExportSelected}
         />
       )}
@@ -171,7 +175,7 @@ export const FlashcardBuilderScreen: React.FC<Props> = ({ chapter, book, onBack 
         {!loading && !selecting && (
           <View style={s.countRow}>
             <Text style={s.countText}>{cards.length} flashcard{cards.length !== 1 ? 's' : ''}</Text>
-            <Text style={s.hintText}>long-press to export  ·  swipe → hide  ·  swipe ← delete</Text>
+            <Text style={s.hintText}>long-press to export  ·  swipe ← delete</Text>
           </View>
         )}
         {loading
@@ -180,16 +184,23 @@ export const FlashcardBuilderScreen: React.FC<Props> = ({ chapter, book, onBack 
               const fUrl     = getUrl(card, 'front_image');
               const hasAudio = !!(card as any).front_audio || !!(card as any).back_audio;
               return (
-                <SwipeableRow key={card.id} onDelete={() => setDeleteTarget(card)} onHide={() => handleToggleHide(card.id)} isHidden={hidden.has(card.id)}>
+                <SwipeableRow key={card.id} onDelete={() => setDeleteTarget(card)} isHidden={hidden.has(card.id)}>
                   <CardListItem
                     index={i} front={card.front} back={card.back}
                     thumbUri={fUrl} hasAudio={hasAudio}
                     accentColor={book.color}
                     selecting={selecting} selected={selected.has(card.id)}
                     isHidden={hidden.has(card.id)}
-                    onPress={() => {
+                    onPress={async () => {
                       if (selecting) { toggleSelect(card.id); }
-                      else { setPreviewCard(card); setFlipped(false); setView('preview'); }
+                      else {
+                        setPreviewLoading(card.id);
+                        await new Promise(r => setTimeout(r, 300));
+                        setPreviewCard(card);
+                        setFlipped(false);
+                        setView('preview');
+                        setPreviewLoading(null);
+                      }
                     }}
                     onLongPress={() => { if (!selecting) { setSelecting(true); setSelected(new Set([card.id])); } }}
                   />
@@ -197,7 +208,7 @@ export const FlashcardBuilderScreen: React.FC<Props> = ({ chapter, book, onBack 
               );
             })
         }
-        {!loading && (
+        {!loading && !selecting && (
           <View style={s.actions}>
             <Pressable onPress={() => setView('create')} style={s.addBtn}>
               <Text style={s.addBtnText}>+ Add Flashcard</Text>

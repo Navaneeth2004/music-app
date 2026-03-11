@@ -20,6 +20,7 @@ export const FlashcardsScreen: React.FC<{
   const [loading, setLoading]     = useState(true);
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected]   = useState<Set<string>>(new Set());
+  const [previewLoading, setPreviewLoading] = useState<string | null>(null);
 
   useEffect(() => { getChapterFlashcards(chapter.id).then(setCards).finally(() => setLoading(false)); }, []);
 
@@ -84,7 +85,16 @@ export const FlashcardsScreen: React.FC<{
                   accentColor={book.color}
                   selecting={selecting}
                   selected={selected.has(card.id)}
-                  onPress={() => selecting ? toggleSelect(card.id) : onSingle(card)}
+                  onPress={async () => {
+                    if (selecting) {
+                      toggleSelect(card.id);
+                    } else {
+                      setPreviewLoading(card.id);
+                      await new Promise(r => setTimeout(r, 300));
+                      onSingle(card);
+                      setPreviewLoading(null);
+                    }
+                  }}
                   onLongPress={() => { if (!selecting) { setSelecting(true); setSelected(new Set([card.id])); } }}
                 />
               ))
@@ -112,6 +122,7 @@ const ls = StyleSheet.create({
 // so the back link sits properly below the status bar, not overlapping it.
 export const SingleCardScreen: React.FC<{ card: Flashcard; book: Book; onBack: () => void }> = ({ card, book, onBack }) => {
   const [flipped, setFlipped] = useState(false);
+  const [backLoading, setBackLoading] = useState(false);
   const fUrl     = imgUrl(card, 'front_image');
   const bUrl     = imgUrl(card, 'back_image');
   const fAudio   = imgUrl(card, 'front_audio' as any);
@@ -124,8 +135,16 @@ export const SingleCardScreen: React.FC<{ card: Flashcard; book: Book; onBack: (
     <SafeAreaView style={s.safe}>
       {/* Header row — inside SafeAreaView so it's below the status bar */}
       <View style={sc.header}>
-        <Pressable onPress={onBack} hitSlop={8}>
-          <Text style={sc.backText}>← Flashcards</Text>
+        <Pressable
+          onPress={async () => { setBackLoading(true); await new Promise(r => setTimeout(r, 300)); onBack(); }}
+          disabled={backLoading}
+          hitSlop={8}
+          style={{ width: 120, height: 32, justifyContent: 'center' }}
+        >
+          {backLoading
+            ? <ActivityIndicator size="small" color={Colors.accentLight} />
+            : <Text style={sc.backText}>← Flashcards</Text>
+          }
         </Pressable>
       </View>
       <View style={s.previewContainer}>
@@ -159,6 +178,7 @@ export const ExamScreen: React.FC<{
   const [idx, setIdx]             = useState(0);
   const [flipped, setFlipped]     = useState(false);
   const [results, setResults]     = useState<Record<string, 'know' | 'unsure' | 'missed'>>({});
+  const [backLoading, setBackLoading] = useState(false);
 
   const current    = deckCards[idx];
   const sideColor  = flipped ? BACK_COLOR : book.color;
@@ -178,7 +198,16 @@ export const ExamScreen: React.FC<{
   if (phase === 'session') return (
     <SafeAreaView style={s.safe}>
       <View style={s.examHeader}>
-        <Pressable onPress={onBack}><Text style={s.backText}>✕ Quit</Text></Pressable>
+        <Pressable
+          onPress={async () => { setBackLoading(true); await new Promise(r => setTimeout(r, 300)); onBack(); }}
+          disabled={backLoading}
+          style={{ width: 56, height: 32, justifyContent: 'center' }}
+        >
+          {backLoading
+            ? <ActivityIndicator size="small" color={Colors.accentLight} />
+            : <Text style={s.backText}>✗ Quit</Text>
+          }
+        </Pressable>
         <Text style={s.examProgress}>{idx + 1} / {deckCards.length}</Text>
         <View style={{ width: 56 }} />
       </View>

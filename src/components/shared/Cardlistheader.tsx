@@ -1,9 +1,3 @@
-/**
- * Shared header + selection-bar components for flashcard list screens.
- *
- * CardListHeader  — top bar with back button, title badge, and optional right action
- * SelectionBar    — appears below header when in select-mode: count + select-all + export
- */
 import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Colors, FontSize, Spacing, Radius } from '../../constants/theme';
@@ -45,16 +39,26 @@ interface SelectionBarProps {
   onSelectAll: () => void;
   onExport:    () => void;
   allSelected: boolean;
+  /** Optional hide action — renders a Hide button between Select All and Export */
+  onHide?:     () => void;
 }
 
 export const SelectionBar: React.FC<SelectionBarProps> = ({
-  count, total, accentColor, onSelectAll, onExport, allSelected,
+  count, total, accentColor, onSelectAll, onExport, allSelected, onHide,
 }) => (
   <View style={sb.bar}>
     <Text style={sb.count}>{count} of {total} selected</Text>
     <Pressable onPress={onSelectAll} style={sb.btn}>
       <Text style={sb.btnText}>{allSelected ? 'Deselect All' : 'Select All'}</Text>
     </Pressable>
+    {onHide && (
+      <Pressable
+        onPress={onHide}
+        disabled={count === 0}
+        style={[sb.btn, { opacity: count === 0 ? 0.4 : 1 }]}>
+        <Text style={sb.btnText}>👁 Hide</Text>
+      </Pressable>
+    )}
     <Pressable
       onPress={onExport}
       disabled={count === 0}

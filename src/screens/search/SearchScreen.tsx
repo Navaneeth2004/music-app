@@ -93,7 +93,10 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({ onNavigate }) => {
             placeholder="Search books, chapters, flashcards…"
             placeholderTextColor={Colors.textMuted}
             value={query}
-            onChangeText={setQuery}
+            onChangeText={q => {
+              setQuery(q);
+              if (!q.trim()) { setResults([]); setSearched(false); setLoading(false); }
+            }}
             autoCorrect={false}
             autoCapitalize="none"
             returnKeyType="search"

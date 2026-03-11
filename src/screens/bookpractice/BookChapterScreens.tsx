@@ -62,6 +62,7 @@ export const BookListScreen: React.FC<{ onBook: (b: Book) => void; onSoloDecks: 
   const [pinned, setPinned]   = useState<Set<string>>(new Set());
   const [hidden, setHidden]   = useState<Set<string>>(new Set());
   const [menu, setMenu]       = useState<Book | null>(null);
+  const [openingBook, setOpeningBook] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [b, p, h] = await Promise.all([
@@ -122,13 +123,17 @@ export const BookListScreen: React.FC<{ onBook: (b: Book) => void; onSoloDecks: 
                     <React.Fragment key={book.id}>
                       {wasFirst && <Text style={[s.sectionLabel, { marginTop: Spacing.md }]}>ALL BOOKS</Text>}
                       <Pressable
-                        onPress={() => onBook(book)}
+                        onPress={async () => { setOpeningBook(book.id); await new Promise(r => setTimeout(r, 300)); onBook(book); setOpeningBook(null); }}
                         onLongPress={() => isAdmin && setMenu(book)}
                         delayLongPress={400}
-                        style={({ pressed }) => [s.bookCard, pressed && s.pressed, isHid && { opacity: 0.45 }]}
+                        disabled={openingBook === book.id}
+                        style={({ pressed }) => [s.bookCard, pressed && s.pressed, isHid && { opacity: 0.45 }, openingBook === book.id && { opacity: 0.6 }]}
                       >
                         <View style={[s.bookCover, { backgroundColor: book.color }]}>
-                          <Text style={{ fontSize: 26 }}>{book.icon}</Text>
+                          {openingBook === book.id
+                            ? <ActivityIndicator size="small" color="#fff" />
+                            : <Text style={{ fontSize: 26 }}>{book.icon}</Text>
+                          }
                         </View>
                         <View style={s.bookMeta}>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -179,6 +184,7 @@ export const ChapterListScreen: React.FC<{
   const [loading, setLoading]   = useState(true);
   const [hidden, setHidden]     = useState<Set<string>>(new Set());
   const [menu, setMenu]         = useState<Chapter | null>(null);
+  const [openingChapter, setOpeningChapter] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [ch, h] = await Promise.all([
@@ -221,13 +227,17 @@ export const ChapterListScreen: React.FC<{
                 const isHid = hidden.has(ch.id);
                 return (
                   <Pressable key={ch.id}
-                    onPress={() => onChapter(ch)}
+                    onPress={async () => { setOpeningChapter(ch.id); await new Promise(r => setTimeout(r, 300)); onChapter(ch); setOpeningChapter(null); }}
                     onLongPress={() => isAdmin && setMenu(ch)}
                     delayLongPress={400}
-                    style={({ pressed }) => [s.chCard, pressed && s.pressed, isHid && { opacity: 0.45 }]}
+                    disabled={openingChapter === ch.id}
+                    style={({ pressed }) => [s.chCard, pressed && s.pressed, isHid && { opacity: 0.45 }, openingChapter === ch.id && { opacity: 0.6 }]}
                   >
                     <View style={[s.chNum, { borderColor: book.color + '44' }]}>
-                      <Text style={[s.chNumText, { color: book.color }]}>{ch.number}</Text>
+                      {openingChapter === ch.id
+                        ? <ActivityIndicator size="small" color={book.color} />
+                        : <Text style={[s.chNumText, { color: book.color }]}>{ch.number}</Text>
+                      }
                     </View>
                     <View style={{ flex: 1 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -265,6 +275,8 @@ export const ChapterViewScreen: React.FC<{
   const [chapter, setChapter] = useState<Chapter>(initialChapter);
   const [blocks, setBlocks]   = useState<ContentBlock[]>([]);
   const [loading, setLoading] = useState(true);
+  const [backLoading, setBackLoading] = useState(false);
+  const [flashcardsLoading, setFlashcardsLoading] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -293,8 +305,15 @@ export const ChapterViewScreen: React.FC<{
     <SafeAreaView style={s.safe}>
       <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.lg }}>
-          <Pressable onPress={onBack} style={{ paddingVertical: 4, minWidth: 60 }}>
-            <Text style={{ color: Colors.accentLight, fontSize: FontSize.md, fontWeight: '500' }}>← {book.title}</Text>
+          <Pressable
+            onPress={async () => { setBackLoading(true); await new Promise(r => setTimeout(r, 300)); onBack(); }}
+            disabled={backLoading}
+            style={{ paddingVertical: 4, width: 70, height: 32, justifyContent: 'center' }}
+          >
+            {backLoading
+              ? <ActivityIndicator size="small" color={Colors.accentLight} />
+              : <Text style={{ color: Colors.accentLight, fontSize: FontSize.md, fontWeight: '500' }}>← Chapters</Text>
+            }
           </Pressable>
           <View style={{ flex: 1, alignItems: 'center' }}>
             <View style={[s.badge, { backgroundColor: book.color + '22', borderColor: book.color + '55', alignSelf: 'center', marginBottom: 0 }]}>
@@ -309,11 +328,19 @@ export const ChapterViewScreen: React.FC<{
           ? <View style={{ marginTop: Spacing.xl }}><Empty icon="📝" title="No content yet" subtitle="Check back soon" /></View>
           : <View style={{ marginBottom: Spacing.xl }}>{blocks.map(b => <BlockPreview key={b.id} block={b} />)}</View>
         }
-        <Pressable onPress={onFlashcards}
-          style={[s.flashcardsBtn, { borderColor: book.color + '55', backgroundColor: book.color + '11' }]}>
-          <Text style={{ fontSize: 24 }}>🃏</Text>
-          <Text style={[s.flashcardsBtnText, { color: book.color }]}>Study Flashcards</Text>
-          <Text style={s.chevron}>›</Text>
+        <Pressable
+          onPress={async () => { setFlashcardsLoading(true); await new Promise(r => setTimeout(r, 300)); onFlashcards(); }}
+          disabled={flashcardsLoading}
+          style={[s.flashcardsBtn, { borderColor: book.color + '55', backgroundColor: book.color + '11', opacity: flashcardsLoading ? 0.6 : 1 }]}
+        >
+          {flashcardsLoading
+            ? <ActivityIndicator size="large" color={book.color} />
+            : <>
+                <Text style={{ fontSize: 24 }}>🃏</Text>
+                <Text style={[s.flashcardsBtnText, { color: book.color }]}>Study Flashcards</Text>
+                <Text style={s.chevron}>›</Text>
+              </>
+          }
         </Pressable>
       </ScrollView>
     </SafeAreaView>
